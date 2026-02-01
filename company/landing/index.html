@@ -46,9 +46,11 @@
     <div class="container">
     <center>
         <img src="./logo.png" alt="Zuckerman Logo" class="logo" width="200">
-        <h1>Zuckerman</h1>
-        <p><b>A personal AI that starts minimal, self-improves in real-time, and shares its discoveries with other agents.</b></p>
+        <h1>Zuckerman [WIP]</h1>
+        <p><b>Ultra-minimal personal AI agent: starts small, self-modifies its code live, adapts by writing exactly the code & features you need (beyond just self-looping), improves instantly, and shares improvements with other agents.</b></p>
     </center>
+
+    <p>The vision: Build a truly self-growing intelligence — one that can add tools, rewrite behavior, or extend its core logic by editing its own files — with almost no external code required. Agents propose and publish capabilities to a shared contribution site, letting others discover, adopt, and evolve them further.</p>
 
     <hr>
 
@@ -58,35 +60,54 @@
 
     <hr>
 
-    <h2>Design</h2>
-    <p>Zuckerman is a three-layer architecture for AI agents, designed to be modified while it's running. No restarts, no rebuilds, no hassle.</p>
+    <h2>Architecture (Three Layers)</h2>
+    <p>Everything is plain-text configurable and instantly reloadable.</p>
     
     <table border="1" cellpadding="10" cellspacing="0" width="100%">
         <tr>
             <td width="33%">
-                <h3>The World</h3>
-                <p>The operating system layer. Handles communication, execution, security, and runtime services.</p>
+                <h3>World</h3>
+                <p>The lightweight OS layer. Communication (messengers, gateway), Execution (processes, security), Runtime (agent factory), Config loader, Voice, System utils.</p>
             </td>
             <td width="33%">
-                <h3>The Agents</h3>
-                <p>Individual agent configurations. Each agent has its own cognitive modules, tools, and personality.</p>
+                <h3>Agents</h3>
+                <p>Self-contained agent definitions. Each folder = one agent (core modules, tools, sessions, personality).</p>
             </td>
             <td width="33%">
-                <h3>The Interfaces</h3>
-                <p>How you interact. A powerful CLI and a native Electron app for a seamless control panel experience.</p>
+                <h3>Interfaces</h3>
+                <p>How you talk to it. CLI + Electron/React app (chat, inspector, settings, onboarding).</p>
             </td>
         </tr>
     </table>
 
     <hr>
 
-    <h2>Self-Evolving Intelligence</h2>
-    <p>The core philosophy of Zuckerman is to create an agent that can add capabilities to itself. Everything is configured via plain text files that the agent can edit, and changes apply instantly.</p>
-    <p>Agents can offer their improvements in a contribution website where other agents can discover and adopt them, creating a collaborative ecosystem of shared capabilities.</p>
-    
+    <h2>Key Features</h2>
+    <ul>
+        <li><b>Minimal by design</b> — starts with core essentials only</li>
+        <li><b>Real-time self-improvement</b> — agent edits its own files (config, tools, behavior, code) and reloads instantly</li>
+        <li><b>Full runtime modification</b> — tweak anything while the agent runs</li>
+        <li><b>Hot-reload everywhere</b> — no restarts needed</li>
+        <li><b>Feature versioning</b> — track and manage versions of agent capabilities and improvements</li>
+        <li><b>Collaborative ecosystem</b> — share and adopt improvements via a contribution website</li>
+        <li><b>Multi-channel ready</b> — Discord, Slack, Telegram, WhatsApp, WebChat + more</li>
+        <li><b>Voice support</b> — TTS/STT with multiple providers</li>
+        <li><b>Security foundations</b> — auth, policy engine, sandboxing (Docker), secret management</li>
+        <li><b>Multiple agents</b> — run several with unique personalities/tools</li>
+        <li><b>Dual interfaces</b> — CLI (power users) + Electron app (visual)</li>
+        <li><b>Calendar & scheduling</b> — built-in time management</li>
+    </ul>
+
+    <hr>
+
+    <h2>Quick Start</h2>
     <pre style="background-color: #CCCCCC; padding: 10px; border: 1px solid #000000;">
-# Install and run
+# Clone and install
+git clone https://github.com/zuckermanai/zuckerman.git
+cd zuckerman
 pnpm install
+
+# Launch the Electron app (recommended for beginners)
 pnpm run dev
     </pre>
 
