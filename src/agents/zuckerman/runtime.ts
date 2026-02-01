@@ -2,5 +2,9 @@
  * Agent runtime entry point
  * Re-exports the ZuckermanAwareness runtime as ZuckermanRuntime for agent discovery
  */
-export { ZuckermanAwareness as ZuckermanRuntime, ZuckermanAwareness } from "./core/awareness/runtime.js";
-export type { LoadedPrompts } from "./core/awareness/runtime.js";
+import { ZuckermanAwareness } from "./core/awareness/runtime.js";
+export { ZuckermanAwareness as ZuckermanRuntime, ZuckermanAwareness };
+export type { LoadedPrompts } from "./core/memory/loader.js";
+
+// Default export for easier discovery
+export default ZuckermanAwareness;

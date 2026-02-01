@@ -85,11 +85,25 @@ export function createAgentHandlers(
         await agentSessionManager.addMessage(actualSessionId, "user", message);
 
         // Get agent runtime
-        const runtime = await agentFactory.getRuntime(agentId);
+        let runtime: any = null;
+        let loadError: string | undefined;
+        try {
+          runtime = await agentFactory.getRuntime(agentId);
+        } catch (err) {
+          loadError = err instanceof Error ? err.message : String(err);
+          console.error(`[AgentHandler] Error loading runtime for "${agentId}":`, loadError);
+        }
+        
         if (!runtime) {
+          // Check if agent is listed but runtime failed to load
+          const listedAgents = await agentFactory.listAgents();
+          const isListed = listedAgents.includes(agentId);
+          
           respond(false, undefined, {
             code: "AGENT_NOT_FOUND",
-            message: `Agent "${agentId}" not found`,
+            message: isListed 
+              ? `Agent "${agentId}" is listed but failed to load.${loadError ? ` Error: ${loadError}` : " Check gateway logs for details."}`
+              : `Agent "${agentId}" not found. Available agents: ${listedAgents.join(", ") || "none"}`,
           });
           return;
         }

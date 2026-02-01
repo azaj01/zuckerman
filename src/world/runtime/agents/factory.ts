@@ -158,10 +158,16 @@ export class AgentRuntimeFactory {
           // Try using path alias first (works with tsx)
           const aliasPath = `@agents/${agentId}/runtime.js`;
           module = await import(aliasPath);
-        } catch {
+        } catch (aliasError) {
           // Fallback to file:// URL if alias doesn't work
-          const runtimeUrl = pathToFileURL(runtimePath).href;
-          module = await import(runtimeUrl);
+          try {
+            const runtimeUrl = pathToFileURL(runtimePath).href;
+            module = await import(runtimeUrl);
+          } catch (fileError) {
+            const aliasErr = aliasError instanceof Error ? aliasError.message : String(aliasError);
+            const fileErr = fileError instanceof Error ? fileError.message : String(fileError);
+            throw new Error(`Failed to import runtime: alias error: ${aliasErr}, file error: ${fileErr}`);
+          }
         }
       }
       
@@ -182,7 +188,10 @@ export class AgentRuntimeFactory {
     } catch (err) {
       const errorDetails = err instanceof Error ? err.message : String(err);
       const stack = err instanceof Error ? err.stack : undefined;
-      console.warn(`Failed to load runtime for agent "${agentId}": ${errorDetails}${stack ? `\n${stack}` : ""}`);
+      console.error(`[AgentFactory] Failed to load runtime for agent "${agentId}": ${errorDetails}`);
+      if (stack) {
+        console.error(`[AgentFactory] Stack trace:\n${stack}`);
+      }
       return null;
     }
   }
