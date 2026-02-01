@@ -11,20 +11,89 @@ import { loadConfig } from "@world/config/index.js";
  * Returns the base directory (src or dist) and whether we're in production
  */
 function detectBaseDir(): { baseDir: string; isProduction: boolean; agentsDir: string } {
-  // Check if we're running from dist by looking at the current file's location
+  // Get the current file's location
   const currentFile = fileURLToPath(import.meta.url);
   const isInDist = currentFile.includes("/dist/");
   
-  if (isInDist) {
-    // Running from dist - look for dist/agents
-    const distAgentsDir = join(process.cwd(), "dist", "agents");
+  // Find project root by navigating up from current file
+  // Current file might be at: .../dist/world/runtime/agents/factory.js
+  // Or: .../src/world/runtime/agents/factory.ts
+  // We need to find the directory that contains either src/agents or dist/agents
+  
+  let searchDir = dirname(currentFile);
+  const maxDepth = 15; // Prevent infinite loops (increased for Electron app paths)
+  let depth = 0;
+  
+  console.log(`[AgentFactory] detectBaseDir: Starting from ${currentFile}`);
+  console.log(`[AgentFactory] detectBaseDir: Initial searchDir: ${searchDir}`);
+  
+  while (depth < maxDepth) {
+    // Check for dist/agents
+    const distAgentsDir = join(searchDir, "dist", "agents");
     if (existsSync(distAgentsDir)) {
+      console.log(`[AgentFactory] detectBaseDir: Found dist/agents at ${distAgentsDir}`);
       return { baseDir: "dist", isProduction: true, agentsDir: distAgentsDir };
     }
+    
+    // Check for src/agents
+    const srcAgentsDir = join(searchDir, "src", "agents");
+    if (existsSync(srcAgentsDir)) {
+      console.log(`[AgentFactory] detectBaseDir: Found src/agents at ${srcAgentsDir}`);
+      return { baseDir: "src", isProduction: false, agentsDir: srcAgentsDir };
+    }
+    
+    // Check if we've reached the filesystem root
+    const parentDir = dirname(searchDir);
+    if (parentDir === searchDir) {
+      // Reached filesystem root
+      console.log(`[AgentFactory] detectBaseDir: Reached filesystem root at ${searchDir}`);
+      break;
+    }
+    
+    // Continue navigating up (don't stop at first package.json, keep going to find the real project root)
+    searchDir = parentDir;
+    depth++;
   }
   
-  // Default to src/agents (for dev mode or if dist doesn't exist)
-  return { baseDir: "src", isProduction: false, agentsDir: join(process.cwd(), "src", "agents") };
+  // Fallback: try to find project root by looking for package.json
+  console.log(`[AgentFactory] detectBaseDir: Navigation failed, trying fallback with process.cwd(): ${process.cwd()}`);
+  
+  // Also try going up from process.cwd() to find project root
+  let cwdDir = process.cwd();
+  for (let i = 0; i < 10; i++) {
+    const cwdDistAgents = join(cwdDir, "dist", "agents");
+    const cwdSrcAgents = join(cwdDir, "src", "agents");
+    
+    console.log(`[AgentFactory] detectBaseDir: Fallback check ${i}: ${cwdDir}`);
+    console.log(`[AgentFactory] detectBaseDir:   dist/agents exists: ${existsSync(cwdDistAgents)}`);
+    console.log(`[AgentFactory] detectBaseDir:   src/agents exists: ${existsSync(cwdSrcAgents)}`);
+    
+    if (existsSync(cwdDistAgents)) {
+      console.log(`[AgentFactory] detectBaseDir: Found dist/agents via cwd fallback at ${cwdDistAgents}`);
+      return { baseDir: "dist", isProduction: true, agentsDir: cwdDistAgents };
+    }
+    if (existsSync(cwdSrcAgents)) {
+      console.log(`[AgentFactory] detectBaseDir: Found src/agents via cwd fallback at ${cwdSrcAgents}`);
+      return { baseDir: "src", isProduction: false, agentsDir: cwdSrcAgents };
+    }
+    
+    // Check for project root markers
+    if (existsSync(join(cwdDir, "package.json")) || existsSync(join(cwdDir, ".git"))) {
+      console.log(`[AgentFactory] detectBaseDir: Found project root marker at ${cwdDir}`);
+      // If we found project root but no agents, that's a problem
+      // But continue searching in case agents are elsewhere
+    }
+    
+    const parentCwd = dirname(cwdDir);
+    if (parentCwd === cwdDir) break;
+    cwdDir = parentCwd;
+  }
+  
+  // Last resort: use process.cwd() directly
+  const fallbackSrc = join(process.cwd(), "src", "agents");
+  console.log(`[AgentFactory] detectBaseDir: Using process.cwd() fallback: ${fallbackSrc}`);
+  console.log(`[AgentFactory] detectBaseDir: WARNING - Could not find agents directory!`);
+  return { baseDir: "src", isProduction: false, agentsDir: fallbackSrc };
 }
 
 /**
@@ -52,6 +121,7 @@ export class AgentRuntimeFactory {
   private runtimes = new Map<string, AgentRuntime>();
   private sessionManagers = new Map<string, SessionManager>();
   private discoveredAgents: string[] | null = null;
+  private loadErrors = new Map<string, string>();
 
   constructor() {
     // Session managers are created per-agent now
@@ -112,20 +182,54 @@ export class AgentRuntimeFactory {
   /**
    * Get or create an agent runtime
    */
-  async getRuntime(agentId: string): Promise<AgentRuntime | null> {
+  async getRuntime(agentId: string, clearCacheOnError = true): Promise<AgentRuntime | null> {
     // Check cache
     const cached = this.runtimes.get(agentId);
     if (cached) {
       return cached;
     }
 
-    // Load runtime dynamically
-    const runtime = await this.createRuntime(agentId);
-    if (runtime) {
-      this.runtimes.set(agentId, runtime);
-    }
+    // Clear any previous error for this agent
+    this.loadErrors.delete(agentId);
 
-    return runtime;
+    // Load runtime dynamically
+    try {
+      const runtime = await this.createRuntime(agentId);
+      if (runtime) {
+        this.runtimes.set(agentId, runtime);
+        return runtime;
+      }
+      
+      // If runtime is null, it means the file doesn't exist
+      // Check if there's a stored error from a previous attempt
+      const storedError = this.loadErrors.get(agentId);
+      if (storedError) {
+        throw new Error(storedError);
+      }
+      
+      return null;
+    } catch (err) {
+      // Error is already logged and stored in createRuntime
+      // If we have a cached entry, try clearing and retrying
+      if (clearCacheOnError && this.runtimes.has(agentId)) {
+        console.warn(`[AgentFactory] Runtime for "${agentId}" failed to load, clearing cache and retrying...`);
+        this.clearCache(agentId);
+        try {
+          const retryRuntime = await this.createRuntime(agentId);
+          if (retryRuntime) {
+            this.runtimes.set(agentId, retryRuntime);
+            return retryRuntime;
+          }
+        } catch (retryErr) {
+          // Retry also failed, use the retry error if it's more specific
+          const retryError = retryErr instanceof Error ? retryErr.message : String(retryErr);
+          this.loadErrors.set(agentId, retryError);
+          throw retryErr;
+        }
+      }
+      // Re-throw so caller can catch it
+      throw err;
+    }
   }
 
   /**
@@ -140,7 +244,7 @@ export class AgentRuntimeFactory {
       const runtimePath = join(agentsDir, agentId, `runtime.${runtimeExtension}`);
       
       if (!existsSync(runtimePath)) {
-        return null;
+        throw new Error(`Runtime file not found: ${runtimePath} (production mode: ${isProduction}, agentsDir: ${agentsDir})`);
       }
 
       // Dynamic import - world doesn't know about specific agents
@@ -177,10 +281,10 @@ export class AgentRuntimeFactory {
       const RuntimeClass = module[`${capitalizedName}Runtime`] || module[`${capitalizedName}Awareness`] || module.default;
 
       if (!RuntimeClass || !isValidRuntimeClass(RuntimeClass)) {
-        console.warn(
-          `Agent "${agentId}" runtime.${runtimeExtension} must export a class named "${capitalizedName}Runtime" or "${capitalizedName}Awareness" or default export that implements AgentRuntime. Found exports: ${Object.keys(module).join(", ")}`,
-        );
-        return null;
+        const foundExports = Object.keys(module).join(", ");
+        const errorMsg = `Agent "${agentId}" runtime.${runtimeExtension} must export a class named "${capitalizedName}Runtime" or "${capitalizedName}Awareness" or default export that implements AgentRuntime. Found exports: ${foundExports || "none"}`;
+        console.error(`[AgentFactory] ${errorMsg}`);
+        throw new Error(errorMsg);
       }
 
       const sessionManager = this.getSessionManager(agentId);
@@ -188,11 +292,20 @@ export class AgentRuntimeFactory {
     } catch (err) {
       const errorDetails = err instanceof Error ? err.message : String(err);
       const stack = err instanceof Error ? err.stack : undefined;
-      console.error(`[AgentFactory] Failed to load runtime for agent "${agentId}": ${errorDetails}`);
-      if (stack) {
-        console.error(`[AgentFactory] Stack trace:\n${stack}`);
-      }
-      return null;
+      const { agentsDir, isProduction } = detectBaseDir();
+      const runtimeExtension = isProduction ? "js" : "ts";
+      const runtimePath = join(agentsDir, agentId, `runtime.${runtimeExtension}`);
+      
+      const fullError = `Error: ${errorDetails}\nRuntime path: ${runtimePath}\nPath exists: ${existsSync(runtimePath)}\nProduction mode: ${isProduction}${stack ? `\nStack:\n${stack}` : ""}`;
+      
+      console.error(`[AgentFactory] Failed to load runtime for agent "${agentId}":`);
+      console.error(`[AgentFactory]   ${fullError}`);
+      
+      // Store error for retrieval (store just the message, not full details)
+      this.loadErrors.set(agentId, errorDetails);
+      
+      // Re-throw the error so it can be caught and reported to the client
+      throw new Error(fullError);
     }
   }
 
@@ -206,6 +319,7 @@ export class AgentRuntimeFactory {
         runtime.clearCache();
       }
       this.runtimes.delete(agentId);
+      this.loadErrors.delete(agentId); // Clear error cache too
     } else {
       for (const runtime of this.runtimes.values()) {
         if (runtime.clearCache) {
@@ -213,8 +327,16 @@ export class AgentRuntimeFactory {
         }
       }
       this.runtimes.clear();
+      this.loadErrors.clear(); // Clear all error caches
       this.discoveredAgents = null; // Reset discovery cache
     }
+  }
+
+  /**
+   * Get the last load error for an agent (if any)
+   */
+  getLoadError(agentId: string): string | undefined {
+    return this.loadErrors.get(agentId);
   }
 
   /**

@@ -64,14 +64,33 @@ export class MessageService {
     agentId: string,
     message: string
   ): Promise<unknown> {
+    console.log(`[MessageService] Sending message to agent "${agentId}" in session "${sessionId}"`);
+    
     const response = await this.client.request("agent.run", {
       sessionId,
       agentId,
       message,
     });
 
-    if (!response.ok || !response.result) {
-      throw new Error(response.error?.message || "Failed to run agent");
+    if (!response.ok) {
+      const errorMessage = response.error?.message || "Failed to run agent";
+      const errorCode = response.error?.code || "UNKNOWN_ERROR";
+      console.error(`[MessageService] Agent run failed:`, {
+        code: errorCode,
+        message: errorMessage,
+        agentId,
+        sessionId,
+      });
+      throw new Error(errorMessage);
+    }
+
+    if (!response.result) {
+      console.error(`[MessageService] Agent run returned no result:`, {
+        agentId,
+        sessionId,
+        response,
+      });
+      throw new Error("Agent run returned no result");
     }
 
     return response.result;

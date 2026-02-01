@@ -91,7 +91,11 @@ export function ChatView({ state, onAction }: ChatViewProps) {
       await sendMessage(messageText);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Failed to send message";
-      alert(errorMessage); // TODO: Replace with a proper toast/notification component
+      console.error(`[ChatView] Error sending message:`, error);
+      // Show error to user
+      alert(`Failed to send message: ${errorMessage}`);
+      // Restore input if sending failed
+      setInput(messageText);
     }
   };
 

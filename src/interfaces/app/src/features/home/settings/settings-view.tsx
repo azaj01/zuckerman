@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { GatewayClient } from "../../../core/gateway/client";
 import { Server, Brain, Settings as SettingsIcon, Loader2, Trash2, Shield } from "lucide-react";
 import { useGateway } from "../../../hooks/use-gateway";

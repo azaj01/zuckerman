@@ -88,10 +88,24 @@ export function createAgentHandlers(
         let runtime: any = null;
         let loadError: string | undefined;
         try {
-          runtime = await agentFactory.getRuntime(agentId);
+          runtime = await agentFactory.getRuntime(agentId, true); // Clear cache on error
         } catch (err) {
           loadError = err instanceof Error ? err.message : String(err);
+          const errorStack = err instanceof Error ? err.stack : undefined;
           console.error(`[AgentHandler] Error loading runtime for "${agentId}":`, loadError);
+          if (errorStack) {
+            console.error(`[AgentHandler] Stack trace:`, errorStack);
+          }
+          
+          // Try clearing cache and retrying once
+          try {
+            agentFactory.clearCache(agentId);
+            runtime = await agentFactory.getRuntime(agentId, false); // Don't retry again
+          } catch (retryErr) {
+            const retryError = retryErr instanceof Error ? retryErr.message : String(retryErr);
+            console.error(`[AgentHandler] Retry also failed for "${agentId}":`, retryError);
+            loadError = retryError; // Use retry error if it's more specific
+          }
         }
         
         if (!runtime) {
@@ -99,10 +113,17 @@ export function createAgentHandlers(
           const listedAgents = await agentFactory.listAgents();
           const isListed = listedAgents.includes(agentId);
           
+          // Get stored error if loadError is not set
+          if (!loadError && agentFactory.getLoadError) {
+            loadError = agentFactory.getLoadError(agentId);
+          }
+          
+          const errorMessage = loadError || "Failed to load runtime (check gateway logs for details)";
+          
           respond(false, undefined, {
             code: "AGENT_NOT_FOUND",
             message: isListed 
-              ? `Agent "${agentId}" is listed but failed to load.${loadError ? ` Error: ${loadError}` : " Check gateway logs for details."}`
+              ? `Agent "${agentId}" is listed but failed to load. Error: ${errorMessage}`
               : `Agent "${agentId}" not found. Available agents: ${listedAgents.join(", ") || "none"}`,
           });
           return;

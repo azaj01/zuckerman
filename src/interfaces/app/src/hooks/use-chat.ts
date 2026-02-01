@@ -425,6 +425,7 @@ export function useChat(
       setMessages((prev) => [...prev, thinkingMessage]);
 
       try {
+        console.log(`[useChat] Sending message with agentId: "${currentAgentId}", sessionId: "${currentSessionId}"`);
         await messageService.sendMessage(currentSessionId, currentAgentId, messageText);
 
         let attempts = 0;
@@ -476,6 +477,7 @@ export function useChat(
 
         await checkForResponse();
       } catch (error) {
+        console.error(`[useChat] Error sending message:`, error);
         setIsSending(false);
         setMessages((prev) =>
           prev.filter(
@@ -488,7 +490,9 @@ export function useChat(
               )
           )
         );
-        throw error;
+        // Re-throw with more context
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        throw new Error(`Failed to send message: ${errorMessage}`);
       }
     },
     [gatewayClient, messageService, agentService, sessionService, agentId, loadMessages]
