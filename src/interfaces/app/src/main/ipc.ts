@@ -29,16 +29,13 @@ export function setupIpcHandlers(): void {
     return getApiKeys();
   });
 
-  ipcMain.handle("api-keys:save", (_, keys: { anthropic?: string; openai?: string; openrouter?: string }) => {
-    return saveApiKeys(keys);
+  ipcMain.handle("api-keys:save", async (_, keys: { anthropic?: string; openai?: string; openrouter?: string }) => {
+    return await saveApiKeys(keys);
   });
 
   // Gateway management handlers
   ipcMain.handle("gateway:start", async (_, host: string, port: number) => {
-    console.log("[IPC] gateway:start handler called", { host, port });
-    const result = await startGateway(host, port);
-    console.log("[IPC] gateway:start handler result", result);
-    return result;
+    return await startGateway(host, port);
   });
 
   ipcMain.handle("gateway:stop", async (_, host: string, port: number) => {

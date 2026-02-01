@@ -59,5 +59,15 @@ export async function saveConfig(config: ZuckermanConfig): Promise<void> {
   const { dirname } = await import("node:path");
   
   await mkdir(dirname(CONFIG_PATH), { recursive: true });
-  await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
+  const content = JSON.stringify(config, null, 2);
+  await writeFile(CONFIG_PATH, content, "utf-8");
+  
+  // Verify the write succeeded
+  const written = await readFile(CONFIG_PATH, "utf-8");
+  const writtenConfig = JSON.parse(written) as ZuckermanConfig;
+  if (config.llm && writtenConfig.llm && JSON.stringify(writtenConfig.llm) !== JSON.stringify(config.llm)) {
+    console.warn("[Config] Warning: Written config.llm doesn't match expected config.llm");
+    console.warn("[Config] Expected:", JSON.stringify(config.llm, null, 2));
+    console.warn("[Config] Written:", JSON.stringify(writtenConfig.llm, null, 2));
+  }
 }

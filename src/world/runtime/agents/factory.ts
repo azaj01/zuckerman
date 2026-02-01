@@ -1,99 +1,104 @@
 import { readdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { AgentRuntime } from "./types.js";
 import { SessionManager } from "@agents/zuckerman/sessions/index.js";
 import { loadConfig } from "@world/config/index.js";
 
 /**
- * Detect if we're running from dist/ or src/
- * Returns the base directory (src or dist) and whether we're in production
+ * Find project root by locating package.json (the definitive marker)
+ * Verifies it's the correct project by checking package name
  */
-function detectBaseDir(): { baseDir: string; isProduction: boolean; agentsDir: string } {
-  // Get the current file's location
+export function findProjectRoot(): string | null {
+  // Strategy 1: Navigate up from current file to find package.json
   const currentFile = fileURLToPath(import.meta.url);
-  const isInDist = currentFile.includes("/dist/");
-  
-  // Find project root by navigating up from current file
-  // Current file might be at: .../dist/world/runtime/agents/factory.js
-  // Or: .../src/world/runtime/agents/factory.ts
-  // We need to find the directory that contains either src/agents or dist/agents
-  
   let searchDir = dirname(currentFile);
-  const maxDepth = 15; // Prevent infinite loops (increased for Electron app paths)
-  let depth = 0;
+  const maxDepth = 20;
   
-  console.log(`[AgentFactory] detectBaseDir: Starting from ${currentFile}`);
-  console.log(`[AgentFactory] detectBaseDir: Initial searchDir: ${searchDir}`);
-  
-  while (depth < maxDepth) {
-    // Check for dist/agents
-    const distAgentsDir = join(searchDir, "dist", "agents");
-    if (existsSync(distAgentsDir)) {
-      console.log(`[AgentFactory] detectBaseDir: Found dist/agents at ${distAgentsDir}`);
-      return { baseDir: "dist", isProduction: true, agentsDir: distAgentsDir };
+  for (let i = 0; i < maxDepth; i++) {
+    const packageJsonPath = join(searchDir, "package.json");
+    if (existsSync(packageJsonPath)) {
+      try {
+        const content = readFileSync(packageJsonPath, "utf-8");
+        const pkg = JSON.parse(content);
+        if (pkg.name === "zuckerman") {
+          return searchDir;
+        }
+      } catch {
+        // If we can't read/parse, assume it's correct
+        return searchDir;
+      }
     }
     
-    // Check for src/agents
-    const srcAgentsDir = join(searchDir, "src", "agents");
-    if (existsSync(srcAgentsDir)) {
-      console.log(`[AgentFactory] detectBaseDir: Found src/agents at ${srcAgentsDir}`);
-      return { baseDir: "src", isProduction: false, agentsDir: srcAgentsDir };
-    }
-    
-    // Check if we've reached the filesystem root
     const parentDir = dirname(searchDir);
-    if (parentDir === searchDir) {
-      // Reached filesystem root
-      console.log(`[AgentFactory] detectBaseDir: Reached filesystem root at ${searchDir}`);
-      break;
-    }
-    
-    // Continue navigating up (don't stop at first package.json, keep going to find the real project root)
+    if (parentDir === searchDir) break;
     searchDir = parentDir;
-    depth++;
   }
   
-  // Fallback: try to find project root by looking for package.json
-  console.log(`[AgentFactory] detectBaseDir: Navigation failed, trying fallback with process.cwd(): ${process.cwd()}`);
+  // Strategy 2: Check environment variable
+  if (process.env.PROJECT_ROOT) {
+    const root = process.env.PROJECT_ROOT;
+    if (existsSync(join(root, "package.json"))) {
+      return root;
+    }
+  }
   
-  // Also try going up from process.cwd() to find project root
+  // Strategy 3: Navigate up from process.cwd()
   let cwdDir = process.cwd();
   for (let i = 0; i < 10; i++) {
-    const cwdDistAgents = join(cwdDir, "dist", "agents");
-    const cwdSrcAgents = join(cwdDir, "src", "agents");
-    
-    console.log(`[AgentFactory] detectBaseDir: Fallback check ${i}: ${cwdDir}`);
-    console.log(`[AgentFactory] detectBaseDir:   dist/agents exists: ${existsSync(cwdDistAgents)}`);
-    console.log(`[AgentFactory] detectBaseDir:   src/agents exists: ${existsSync(cwdSrcAgents)}`);
-    
-    if (existsSync(cwdDistAgents)) {
-      console.log(`[AgentFactory] detectBaseDir: Found dist/agents via cwd fallback at ${cwdDistAgents}`);
-      return { baseDir: "dist", isProduction: true, agentsDir: cwdDistAgents };
+    const packageJsonPath = join(cwdDir, "package.json");
+    if (existsSync(packageJsonPath)) {
+      try {
+        const content = readFileSync(packageJsonPath, "utf-8");
+        const pkg = JSON.parse(content);
+        if (pkg.name === "zuckerman") {
+          return cwdDir;
+        }
+      } catch {
+        return cwdDir;
+      }
     }
-    if (existsSync(cwdSrcAgents)) {
-      console.log(`[AgentFactory] detectBaseDir: Found src/agents via cwd fallback at ${cwdSrcAgents}`);
-      return { baseDir: "src", isProduction: false, agentsDir: cwdSrcAgents };
-    }
-    
-    // Check for project root markers
-    if (existsSync(join(cwdDir, "package.json")) || existsSync(join(cwdDir, ".git"))) {
-      console.log(`[AgentFactory] detectBaseDir: Found project root marker at ${cwdDir}`);
-      // If we found project root but no agents, that's a problem
-      // But continue searching in case agents are elsewhere
-    }
-    
-    const parentCwd = dirname(cwdDir);
-    if (parentCwd === cwdDir) break;
-    cwdDir = parentCwd;
+    const parentDir = dirname(cwdDir);
+    if (parentDir === cwdDir) break;
+    cwdDir = parentDir;
   }
   
-  // Last resort: use process.cwd() directly
+  return null;
+}
+
+/**
+ * Fallback detection function (used when no explicit path is provided)
+ * This is kept for backward compatibility
+ */
+function detectBaseDirFallback(): { baseDir: string; isProduction: boolean; agentsDir: string } {
+  const projectRoot = findProjectRoot();
+  
+  if (projectRoot) {
+    const distAgentsDir = join(projectRoot, "dist", "agents");
+    const srcAgentsDir = join(projectRoot, "src", "agents");
+    
+    if (existsSync(distAgentsDir)) {
+      return { baseDir: "dist", isProduction: true, agentsDir: distAgentsDir };
+    }
+    if (existsSync(srcAgentsDir)) {
+      return { baseDir: "src", isProduction: false, agentsDir: srcAgentsDir };
+    }
+  }
+  
+  // Last resort: use process.cwd()
   const fallbackSrc = join(process.cwd(), "src", "agents");
-  console.log(`[AgentFactory] detectBaseDir: Using process.cwd() fallback: ${fallbackSrc}`);
-  console.log(`[AgentFactory] detectBaseDir: WARNING - Could not find agents directory!`);
   return { baseDir: "src", isProduction: false, agentsDir: fallbackSrc };
+}
+
+/**
+ * Options for AgentRuntimeFactory constructor
+ */
+export interface AgentRuntimeFactoryOptions {
+  /** Project root directory (will check for src/agents or dist/agents relative to this) */
+  projectRoot?: string;
+  /** Direct path to agents directory (takes precedence over projectRoot) */
+  agentsDir?: string;
 }
 
 /**
@@ -115,16 +120,44 @@ function isValidRuntimeClass(cls: unknown): cls is new (sessionManager?: Session
 
 /**
  * Agent runtime factory - creates and manages agent runtime instances
- * Discovers agents dynamically from src/agents/ directory
+ * Discovers agents dynamically from src/agents/ or dist/agents/ directory
  */
 export class AgentRuntimeFactory {
+  private readonly agentsDir: string;
+  private readonly isProduction: boolean;
   private runtimes = new Map<string, AgentRuntime>();
   private sessionManagers = new Map<string, SessionManager>();
   private discoveredAgents: string[] | null = null;
   private loadErrors = new Map<string, string>();
 
-  constructor() {
-    // Session managers are created per-agent now
+  constructor(options?: AgentRuntimeFactoryOptions) {
+    // Determine agents directory and production mode
+    if (options?.agentsDir) {
+      // Direct agents directory path provided
+      this.agentsDir = options.agentsDir;
+      this.isProduction = this.agentsDir.includes("/dist/");
+    } else if (options?.projectRoot) {
+      // Project root provided - check for agents directory
+      const distAgentsDir = join(options.projectRoot, "dist", "agents");
+      const srcAgentsDir = join(options.projectRoot, "src", "agents");
+      
+      if (existsSync(distAgentsDir)) {
+        this.agentsDir = distAgentsDir;
+        this.isProduction = true;
+      } else if (existsSync(srcAgentsDir)) {
+        this.agentsDir = srcAgentsDir;
+        this.isProduction = false;
+      } else {
+        // Fallback to src/agents even if it doesn't exist yet
+        this.agentsDir = srcAgentsDir;
+        this.isProduction = false;
+      }
+    } else {
+      // No options provided - use fallback detection
+      const detected = detectBaseDirFallback();
+      this.agentsDir = detected.agentsDir;
+      this.isProduction = detected.isProduction;
+    }
   }
 
   /**
@@ -148,15 +181,14 @@ export class AgentRuntimeFactory {
     }
 
     const agents: string[] = [];
-    const { agentsDir, isProduction } = detectBaseDir();
 
     try {
-      if (!existsSync(agentsDir)) {
+      if (!existsSync(this.agentsDir)) {
         this.discoveredAgents = [];
         return [];
       }
 
-      const entries = await readdir(agentsDir, { withFileTypes: true });
+      const entries = await readdir(this.agentsDir, { withFileTypes: true });
       
       for (const entry of entries) {
         if (!entry.isDirectory()) {
@@ -165,14 +197,14 @@ export class AgentRuntimeFactory {
 
         const agentId = entry.name;
         // Check for runtime.js in dist, runtime.ts in src
-        const runtimePath = join(agentsDir, agentId, isProduction ? "runtime.js" : "runtime.ts");
+        const runtimePath = join(this.agentsDir, agentId, this.isProduction ? "runtime.js" : "runtime.ts");
         
         if (existsSync(runtimePath)) {
           agents.push(agentId);
         }
       }
     } catch (err) {
-      console.warn(`Failed to discover agents:`, err);
+      console.warn(`[AgentFactory] Failed to discover agents:`, err);
     }
 
     this.discoveredAgents = agents;
@@ -237,21 +269,19 @@ export class AgentRuntimeFactory {
    */
   private async createRuntime(agentId: string): Promise<AgentRuntime | null> {
     try {
-      const { agentsDir, isProduction } = detectBaseDir();
-      
       // In production, use .js; in dev mode (tsx), use .ts
-      const runtimeExtension = isProduction ? "js" : "ts";
-      const runtimePath = join(agentsDir, agentId, `runtime.${runtimeExtension}`);
+      const runtimeExtension = this.isProduction ? "js" : "ts";
+      const runtimePath = join(this.agentsDir, agentId, `runtime.${runtimeExtension}`);
       
       if (!existsSync(runtimePath)) {
-        throw new Error(`Runtime file not found: ${runtimePath} (production mode: ${isProduction}, agentsDir: ${agentsDir})`);
+        throw new Error(`Runtime file not found: ${runtimePath} (production mode: ${this.isProduction}, agentsDir: ${this.agentsDir})`);
       }
 
       // Dynamic import - world doesn't know about specific agents
       // Convention: each agent exports a runtime class from runtime.ts
       let module: any;
       
-      if (isProduction) {
+      if (this.isProduction) {
         // In production, use file:// URL for .js files
         const runtimeUrl = pathToFileURL(runtimePath).href;
         module = await import(runtimeUrl);
@@ -292,11 +322,10 @@ export class AgentRuntimeFactory {
     } catch (err) {
       const errorDetails = err instanceof Error ? err.message : String(err);
       const stack = err instanceof Error ? err.stack : undefined;
-      const { agentsDir, isProduction } = detectBaseDir();
-      const runtimeExtension = isProduction ? "js" : "ts";
-      const runtimePath = join(agentsDir, agentId, `runtime.${runtimeExtension}`);
+      const runtimeExtension = this.isProduction ? "js" : "ts";
+      const runtimePath = join(this.agentsDir, agentId, `runtime.${runtimeExtension}`);
       
-      const fullError = `Error: ${errorDetails}\nRuntime path: ${runtimePath}\nPath exists: ${existsSync(runtimePath)}\nProduction mode: ${isProduction}${stack ? `\nStack:\n${stack}` : ""}`;
+      const fullError = `Error: ${errorDetails}\nRuntime path: ${runtimePath}\nPath exists: ${existsSync(runtimePath)}\nProduction mode: ${this.isProduction}${stack ? `\nStack:\n${stack}` : ""}`;
       
       console.error(`[AgentFactory] Failed to load runtime for agent "${agentId}":`);
       console.error(`[AgentFactory]   ${fullError}`);

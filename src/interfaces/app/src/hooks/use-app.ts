@@ -91,7 +91,6 @@ export function useApp(): UseAppReturn {
     const needsReconnect = !isActuallyConnected && connectionStatus === "disconnected";
 
     if (needsReconnect) {
-      console.log("[App] Gateway client not connected, attempting to connect...");
       connect();
     }
   }, [gatewayClient, connectionStatus, connect]);
@@ -107,7 +106,6 @@ export function useApp(): UseAppReturn {
 
     const timeoutId = setTimeout(() => {
       if (gatewayClient && !gatewayClient.isConnected() && connectionStatus === "disconnected") {
-        console.log("[App] Attempting reconnect after mount/HMR...");
         connect();
       }
     }, 1000);
@@ -119,7 +117,6 @@ export function useApp(): UseAppReturn {
   // Load agents when connected
   useEffect(() => {
     if (connectionStatus === "connected" && gatewayClient?.isConnected()) {
-      console.log("[App] Connection established, loading agents...");
       // Small delay to ensure connection is fully established
       const timeoutId = setTimeout(() => {
         loadAgents().catch((error) => {
@@ -263,6 +260,29 @@ export function useApp(): UseAppReturn {
   const handleOnboardingComplete = useCallback(
     async (onboardingState: OnboardingState) => {
       setStorageItem("zuckerman:onboarding:completed", "true");
+
+      // Save API keys if LLM provider is configured
+      if (
+        window.electronAPI &&
+        onboardingState.llmProvider.provider &&
+        onboardingState.llmProvider.provider !== "mock" &&
+        onboardingState.llmProvider.apiKey
+      ) {
+        const keys: { anthropic?: string; openai?: string; openrouter?: string } = {};
+        if (onboardingState.llmProvider.provider === "anthropic") {
+          keys.anthropic = onboardingState.llmProvider.apiKey;
+        } else if (onboardingState.llmProvider.provider === "openai") {
+          keys.openai = onboardingState.llmProvider.apiKey;
+        } else if (onboardingState.llmProvider.provider === "openrouter") {
+          keys.openrouter = onboardingState.llmProvider.apiKey;
+        }
+
+        try {
+          await window.electronAPI.saveApiKeys(keys);
+        } catch (error) {
+          console.error("[Onboarding] Error saving API keys:", error);
+        }
+      }
 
       if (onboardingState.agent.agentId) {
         setCurrentAgentId(onboardingState.agent.agentId);

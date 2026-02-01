@@ -8,7 +8,7 @@ import { watchForReload, getWatchPaths } from "./reload.js";
 import { initializeChannels } from "@world/communication/messengers/channels/factory.js";
 import { loadConfig } from "@world/config/index.js";
 import { SessionManager } from "@agents/zuckerman/sessions/index.js";
-import { AgentRuntimeFactory } from "@world/runtime/agents/index.js";
+import { AgentRuntimeFactory, findProjectRoot } from "@world/runtime/agents/index.js";
 import { SimpleRouter } from "@world/communication/routing/index.js";
 
 export interface GatewayServerOptions {
@@ -38,9 +38,24 @@ export async function startGatewayServer(
     });
   };
   
-  // Initialize channels
+  // Load config and set API keys as environment variables for providers
   const config = await loadConfig();
-  const agentFactory = new AgentRuntimeFactory();
+  if (config.llm?.anthropic?.apiKey) {
+    process.env.ANTHROPIC_API_KEY = config.llm.anthropic.apiKey;
+  }
+  if (config.llm?.openai?.apiKey) {
+    process.env.OPENAI_API_KEY = config.llm.openai.apiKey;
+  }
+  if (config.llm?.openrouter?.apiKey) {
+    process.env.OPENROUTER_API_KEY = config.llm.openrouter.apiKey;
+  }
+  
+  // Initialize channels
+  
+  // Find project root and pass it to factory for explicit path resolution
+  const projectRoot = findProjectRoot() || process.cwd();
+  const agentFactory = new AgentRuntimeFactory({ projectRoot });
+  
   // Router will get session managers from factory per agent
   const router = new SimpleRouter(agentFactory);
   

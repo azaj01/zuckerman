@@ -1,135 +1,104 @@
-import { app } from "electron";
-import { join } from "node:path";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { loadConfig, saveConfig } from "@world/config/index.js";
 
 /**
- * Get the path to the .env file in the app's user data directory
+ * Read API keys from config.json
  */
-function getEnvPath(): string {
-  const userDataPath = app.getPath("userData");
-  return join(userDataPath, ".env");
-}
-
-/**
- * Read API keys from .env file
- */
-export function getApiKeys(): {
+export async function getApiKeys(): Promise<{
   anthropic?: string;
   openai?: string;
   openrouter?: string;
-} {
-  const envPath = getEnvPath();
+}> {
   const keys: { anthropic?: string; openai?: string; openrouter?: string } = {};
 
-  if (!existsSync(envPath)) {
-    return keys;
-  }
-
   try {
-    const content = readFileSync(envPath, "utf-8");
-    const lines = content.split("\n");
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-
-      const [key, ...valueParts] = trimmed.split("=");
-      const value = valueParts.join("=").trim().replace(/^["']|["']$/g, "");
-
-      if (key === "ANTHROPIC_API_KEY") {
-        keys.anthropic = value;
-      } else if (key === "OPENAI_API_KEY") {
-        keys.openai = value;
-      } else if (key === "OPENROUTER_API_KEY") {
-        keys.openrouter = value;
-      }
+    const config = await loadConfig();
+    if (config.llm?.anthropic?.apiKey) {
+      keys.anthropic = config.llm.anthropic.apiKey;
+    }
+    if (config.llm?.openai?.apiKey) {
+      keys.openai = config.llm.openai.apiKey;
+    }
+    if (config.llm?.openrouter?.apiKey) {
+      keys.openrouter = config.llm.openrouter.apiKey;
     }
   } catch (error) {
-    console.error("Error reading .env file:", error);
+    console.error("Error reading API keys from config:", error);
   }
 
   return keys;
 }
 
 /**
- * Save API keys to .env file
+ * Save API keys to config.json only
  */
-export function saveApiKeys(keys: {
+export async function saveApiKeys(keys: {
   anthropic?: string;
   openai?: string;
   openrouter?: string;
-}): { success: boolean; error?: string } {
+}): Promise<{ success: boolean; error?: string }> {
   try {
-    const envPath = getEnvPath();
-    const userDataPath = app.getPath("userData");
-
-    // Ensure user data directory exists
-    if (!existsSync(userDataPath)) {
-      mkdirSync(userDataPath, { recursive: true });
+    const config = await loadConfig();
+    
+    if (!config.llm) {
+      config.llm = {};
     }
-
-    // Read existing .env file to preserve other variables
-    const existingVars: Record<string, string> = {};
-    if (existsSync(envPath)) {
-      const content = readFileSync(envPath, "utf-8");
-      const lines = content.split("\n");
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith("#")) continue;
-
-        const [key, ...valueParts] = trimmed.split("=");
-        const value = valueParts.join("=").trim().replace(/^["']|["']$/g, "");
-
-        // Only preserve non-API-key variables
-        if (
-          key !== "ANTHROPIC_API_KEY" &&
-          key !== "OPENAI_API_KEY" &&
-          key !== "OPENROUTER_API_KEY"
-        ) {
-          existingVars[key] = value;
-        }
-      }
-    }
-
-    // Build new .env content
-    const lines: string[] = [
-      "# Zuckerman API Keys",
-      "# This file is automatically managed by the Zuckerman app",
-      "",
-    ];
-
-    // Add API keys
     if (keys.anthropic) {
-      lines.push(`ANTHROPIC_API_KEY=${keys.anthropic}`);
+      if (!config.llm.anthropic) {
+        config.llm.anthropic = {};
+      }
+      config.llm.anthropic.apiKey = keys.anthropic;
     }
     if (keys.openai) {
-      lines.push(`OPENAI_API_KEY=${keys.openai}`);
+      if (!config.llm.openai) {
+        config.llm.openai = {};
+      }
+      config.llm.openai.apiKey = keys.openai;
     }
     if (keys.openrouter) {
-      lines.push(`OPENROUTER_API_KEY=${keys.openrouter}`);
-    }
-
-    // Add other existing variables
-    if (Object.keys(existingVars).length > 0) {
-      lines.push("");
-      lines.push("# Other environment variables");
-      for (const [key, value] of Object.entries(existingVars)) {
-        lines.push(`${key}=${value}`);
+      if (!config.llm.openrouter) {
+        config.llm.openrouter = {};
       }
+      config.llm.openrouter.apiKey = keys.openrouter;
+    }
+    
+    await saveConfig(config);
+    
+    // Verify it was saved correctly - wait a bit for file system to sync
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const verifyConfig = await loadConfig();
+    
+    const verificationErrors: string[] = [];
+    if (keys.openrouter && !verifyConfig.llm?.openrouter?.apiKey) {
+      verificationErrors.push("openrouter key not found after save");
+    }
+    if (keys.anthropic && !verifyConfig.llm?.anthropic?.apiKey) {
+      verificationErrors.push("anthropic key not found after save");
+    }
+    if (keys.openai && !verifyConfig.llm?.openai?.apiKey) {
+      verificationErrors.push("openai key not found after save");
+    }
+    
+    if (verificationErrors.length > 0) {
+      const errorMsg = `Verification failed: ${verificationErrors.join(", ")}`;
+      console.error("[env-manager]", errorMsg);
+      throw new Error(errorMsg);
     }
 
-    writeFileSync(envPath, lines.join("\n") + "\n", "utf-8");
+    // Set environment variables in current process (for immediate use)
+    if (keys.anthropic) {
+      process.env.ANTHROPIC_API_KEY = keys.anthropic;
+    }
+    if (keys.openai) {
+      process.env.OPENAI_API_KEY = keys.openai;
+    }
+    if (keys.openrouter) {
+      process.env.OPENROUTER_API_KEY = keys.openrouter;
+    }
+
     return { success: true };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error("[env-manager] Error saving API keys:", errorMessage);
     return { success: false, error: `Failed to save API keys: ${errorMessage}` };
   }
-}
-
-/**
- * Get the path to the .env file (for passing to gateway process)
- */
-export function getEnvFilePath(): string {
-  return getEnvPath();
 }
