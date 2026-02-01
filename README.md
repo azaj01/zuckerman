@@ -61,6 +61,56 @@ This will:
 3. Start Vite dev server for the renderer
 4. Launch Electron app automatically
 
+## How It Works
+
+1. **Start the agent**—it runs continuously in the background
+2. **Tell the agent to edit itself**—ask it to modify its own configuration files, add tools, or improve capabilities
+3. **Changes apply instantly**—the agent edits files in `src/world/`, `src/agents/`, or `src/interfaces/` and hot-reload applies changes immediately
+4. **Watch it evolve**—the agent improves itself in real-time while continuing to operate
+
+### Creating Custom Agents
+
+- The `src/agents/zuckerman/` folder contains the base agent configuration—keep it unchanged as a reference template
+- Create new agents by copying `src/agents/zuckerman/` to `src/agents/[your-agent-name]/` and customize the configuration files as needed
+- Each agent folder contains its own `core/`, `sessions/`, and `tools/` directories
+
+## What You Can Customize
+
+**World (Operating System):**
+- **Communication**: Gateway (WebSocket), messengers/channels (Discord, Slack, Telegram, WhatsApp, WebChat), routing
+- **Execution**: Process execution, security (auth, policy, sandbox, secrets, context)
+- **Runtime**: Agent factory and management
+- **Config**: Configuration loading and management
+- **Voice**: Text-to-speech and speech-to-text providers
+- **System**: System utilities and services
+
+**Agents Layer:**
+- Create multiple agent configurations in `src/agents/`
+- Each agent has its own core modules (awareness/LLM providers, hear/STT, memory, personality, speak/TTS)
+- Configure tools (browser, canvas, cron, device, terminal, TTS) per agent
+- Customize session management per agent
+- Define personality traits (fear, joy, motivations, traits, values) and behavior patterns per agent
+- Note: Input channels (Discord, Slack, Telegram, WhatsApp, WebChat) are configured in `src/world/communication/messengers/channels/`
+
+**Interfaces Layer:**
+- CLI commands and behavior (`src/interfaces/cli/`)
+- Native Electron app with React UI (`src/interfaces/app/`) - features include chat, gateway inspector, settings, onboarding
+
+## Getting Started
+
+1. Explore `src/world/`, `src/agents/`, and `src/interfaces/` directories
+2. Read README files in each subdirectory
+3. Start editing—changes take effect immediately
+4. Check application logs to see changes applied
+
+### Creating Your First Custom Agent
+
+1. Copy `src/agents/zuckerman/` to `src/agents/[your-agent-name]/`
+2. Customize the agent's `core/` (awareness, hear/STT, memory, personality, speak/TTS), `sessions/`, and `tools/` directories
+3. Keep `src/agents/zuckerman/` unchanged as a reference template
+
+Each directory contains a README explaining its purpose and how to modify it.
+
 ## Architecture
 
 ```
@@ -124,57 +174,6 @@ src/
         ├── services/        # Application services
         └── main/            # Electron main process
 ```
-
-
-## How It Works
-
-1. **Start the agent**—it runs continuously in the background
-2. **Edit files** in `src/world/`, `src/agents/`, or `src/interfaces/` with any text editor
-3. **Changes apply** automatically—hot-reload enabled
-4. **Iterate** while the agent continues operating
-
-### Creating Custom Agents
-
-- The `src/agents/zuckerman/` folder contains the base agent configuration—keep it unchanged as a reference template
-- Create new agents by copying `src/agents/zuckerman/` to `src/agents/[your-agent-name]/` and customize the configuration files as needed
-- Each agent folder contains its own `core/`, `sessions/`, and `tools/` directories
-
-## What You Can Customize
-
-**World (Operating System):**
-- **Communication**: Gateway (WebSocket), messengers/channels (Discord, Slack, Telegram, WhatsApp, WebChat), routing
-- **Execution**: Process execution, security (auth, policy, sandbox, secrets, context)
-- **Runtime**: Agent factory and management
-- **Config**: Configuration loading and management
-- **Voice**: Text-to-speech and speech-to-text providers
-- **System**: System utilities and services
-
-**Agents Layer:**
-- Create multiple agent configurations in `src/agents/`
-- Each agent has its own core modules (awareness/LLM providers, hear/STT, memory, personality, speak/TTS)
-- Configure tools (browser, canvas, cron, device, terminal, TTS) per agent
-- Customize session management per agent
-- Define personality traits (fear, joy, motivations, traits, values) and behavior patterns per agent
-- Note: Input channels (Discord, Slack, Telegram, WhatsApp, WebChat) are configured in `src/world/communication/messengers/channels/`
-
-**Interfaces Layer:**
-- CLI commands and behavior (`src/interfaces/cli/`)
-- Native Electron app with React UI (`src/interfaces/app/`) - features include chat, gateway inspector, settings, onboarding
-
-## Getting Started
-
-1. Explore `src/world/`, `src/agents/`, and `src/interfaces/` directories
-2. Read README files in each subdirectory
-3. Start editing—changes take effect immediately
-4. Check application logs to see changes applied
-
-### Creating Your First Custom Agent
-
-1. Copy `src/agents/zuckerman/` to `src/agents/[your-agent-name]/`
-2. Customize the agent's `core/` (awareness, hear/STT, memory, personality, speak/TTS), `sessions/`, and `tools/` directories
-3. Keep `src/agents/zuckerman/` unchanged as a reference template
-
-Each directory contains a README explaining its purpose and how to modify it.
 
 ## License
 
