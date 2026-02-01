@@ -2,7 +2,7 @@
   <img src="company/design/logo.png" alt="Zuckerman Logo" width="200"/>
 </div>
 
-# Zuckerman
+# Zuckerman [WIP]
 
 A lightweight personal AI agent that learns, grows, and adapts to your needs without any extra complications. It adapts in real time to all your needs—edit tools, add capabilities, and modify behavior while it's running, with no restarts required.
 
