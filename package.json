@@ -5,18 +5,19 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "zuckerman": "./dist/interfaces/cli/index.js"
+    "zuckerman": "./dist/clients/cli/index.js"
   },
   "packageManager": "pnpm@10.28.2",
   "scripts": {
-    "build": "turbo run build",
+    "build": "tsc && tsc-alias",
+    "build:workspace": "turbo run build",
     "dev": "turbo run dev --filter=@zuckerman/app",
     "dev:cli": "tsx watch src/index.ts",
-    "gateway": "tsx src/interfaces/cli/index.ts gateway",
-    "gateway:watch": "tsx watch src/interfaces/cli/index.ts gateway",
-    "agent": "tsx src/interfaces/cli/index.ts agent",
-    "status": "tsx src/interfaces/cli/index.ts status",
-    "cli": "tsx src/interfaces/cli/index.ts",
+    "gateway": "tsx src/clients/cli/index.ts gateway",
+    "gateway:watch": "tsx watch src/clients/cli/index.ts gateway",
+    "agent": "tsx src/clients/cli/index.ts agent",
+    "status": "tsx src/clients/cli/index.ts status",
+    "cli": "tsx src/clients/cli/index.ts",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "test:watch": "vitest",

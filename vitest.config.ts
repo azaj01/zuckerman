@@ -4,9 +4,11 @@ import { resolve } from "node:path";
 export default defineConfig({
   resolve: {
     alias: {
-      "@world": resolve(__dirname, "./src/world"),
-      "@agents": resolve(__dirname, "./src/agents"),
-      "@interfaces": resolve(__dirname, "./src/interfaces"),
+      "@server/world": resolve(__dirname, "./src/server/world"),
+      "@server/agents": resolve(__dirname, "./src/server/agents"),
+      "@clients/cli": resolve(__dirname, "./src/clients/cli"),
+      "@clients/app": resolve(__dirname, "./src/clients/app"),
+      "@shared": resolve(__dirname, "./src/shared"),
     },
   },
   test: {

@@ -1,2 +1,2 @@
 // Main entry point
-export * from "./world/communication/gateway/index.js";
+export * from "./server/world/communication/gateway/index.js";

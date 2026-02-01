@@ -15,11 +15,13 @@
     "allowSyntheticDefaultImports": true,
     "baseUrl": ".",
     "paths": {
-      "@world/*": ["src/world/*"],
-      "@agents/*": ["src/agents/*"],
-      "@interfaces/*": ["src/interfaces/*"]
+      "@server/world/*": ["src/server/world/*"],
+      "@server/agents/*": ["src/server/agents/*"],
+      "@clients/cli/*": ["src/clients/cli/*"],
+      "@clients/app/*": ["src/clients/app/*"],
+      "@shared/*": ["src/shared/*"]
     }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "src/interfaces/app/**/*"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "src/clients/app/**/*"]
 }

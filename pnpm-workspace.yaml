@@ -1,6 +1,6 @@
 packages:
   - .
-  - src/interfaces/app
+  - src/clients/app
 
 onlyBuiltDependencies:
   - electron

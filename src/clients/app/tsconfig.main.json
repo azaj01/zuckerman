@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist/main",
+    "baseUrl": "../../..",
+    "paths": {
+      "@server/world/*": ["src/server/world/*"],
+      "@server/agents/*": ["src/server/agents/*"],
+      "@clients/cli/*": ["src/clients/cli/*"],
+      "@clients/app/*": ["src/clients/app/*"],
+      "@shared/*": ["src/shared/*"],
+      "@main/*": ["src/clients/app/src/main/*"],
+      "@core/*": ["src/clients/app/src/core/*"]
+    },
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "noEmit": false,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"]
+  },
+  "include": ["src/main/**/*.ts", "../../server/**/*.ts"],
+  "exclude": ["node_modules", "dist", "main/preload.ts"]
+}
