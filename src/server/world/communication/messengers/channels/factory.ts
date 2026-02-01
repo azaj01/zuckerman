@@ -9,6 +9,7 @@ import type { SimpleRouter } from "@server/world/communication/routing/index.js"
 import type { SessionManager } from "@server/agents/zuckerman/sessions/index.js";
 import type { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
 import type { Channel } from "./types.js";
+import { setChannelRegistry } from "@server/agents/zuckerman/tools/channels/registry.js";
 
 /**
  * Initialize and register all configured channels
@@ -38,12 +39,16 @@ export async function initializeChannels(
       },
       (connected) => {
         // Broadcast connection status to all connected gateway clients
+        console.log(`[WhatsApp Factory] Connection status changed: ${connected}`);
         if (broadcastEvent) {
+          console.log("[WhatsApp Factory] Broadcasting connection event");
           broadcastEvent({
             type: "event",
             event: "channel.whatsapp.connection",
             payload: { connected, channelId: "whatsapp", ts: Date.now() },
           });
+        } else {
+          console.warn("[WhatsApp Factory] No broadcastEvent function available");
         }
       },
     );
@@ -113,6 +118,9 @@ export async function initializeChannels(
       enabled: config.channels.whatsapp.enabled,
       config: config.channels.whatsapp as Record<string, unknown>,
     });
+
+    // Set channel registry for agent tools
+    setChannelRegistry(registry);
   }
 
   // Helper function to set up message routing for a channel
@@ -233,6 +241,9 @@ export async function initializeChannels(
       config: config.channels.webchat as Record<string, unknown>,
     });
   }
+
+  // Set channel registry for agent tools (even if no channels registered)
+  setChannelRegistry(registry);
 
   return registry;
 }

@@ -11,6 +11,7 @@ export function createChannelHandlers(
   router: SimpleRouter,
   sessionManager: SessionManager,
   agentFactory: AgentRuntimeFactory,
+  broadcastEvent?: (event: { type: "event"; event: string; payload?: unknown }) => void,
 ): Partial<GatewayRequestHandlers> {
   return {
     "channels.list": async ({ respond }) => {
@@ -127,6 +128,7 @@ export function createChannelHandlers(
           router,
           sessionManager,
           agentFactory,
+          broadcastEvent,
         );
         
         // Copy new channels to existing registry

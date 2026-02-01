@@ -15,16 +15,17 @@ export interface CoreHandlersDeps {
   agentFactory: AgentRuntimeFactory;
   router: SimpleRouter;
   channelRegistry: ChannelRegistry | null;
+  broadcastEvent?: (event: { type: "event"; event: string; payload?: unknown }) => void;
 }
 
 export function createCoreHandlers(deps: CoreHandlersDeps): GatewayRequestHandlers {
-  const { sessionManager, agentFactory, router, channelRegistry } = deps;
+  const { sessionManager, agentFactory, router, channelRegistry, broadcastEvent } = deps;
   
   const healthHandlers = createHealthHandlers();
   const sessionHandlers = createSessionHandlers(agentFactory);
   const agentHandlers = createAgentHandlers(sessionManager, agentFactory);
   const channelHandlers = channelRegistry 
-    ? createChannelHandlers(channelRegistry, router, sessionManager, agentFactory)
+    ? createChannelHandlers(channelRegistry, router, sessionManager, agentFactory, broadcastEvent)
     : {};
   const configHandlers = createConfigHandlers();
   const textToSpeechHandlers = createTextToSpeechHandlers();

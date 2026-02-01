@@ -96,16 +96,6 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
       const response = await gatewayClient.request("agent.prompts", { agentId });
       if (response.ok && response.result) {
         const result = response.result as AgentPrompts;
-        console.log("[AgentView] Prompts response:", {
-          agentId: result.agentId,
-          hasSystem: !!result.system,
-          systemLength: result.system?.length || 0,
-          hasBehavior: !!result.behavior,
-          hasPersonality: !!result.personality,
-          hasInstructions: !!result.instructions,
-          fileCount: result.fileCount,
-          additionalFiles: result.additionalFiles?.length || 0,
-        });
         
         // Check if we actually got any content
         const hasContent = 

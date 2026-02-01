@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { GatewayClient } from "../../../core/gateway/client";
-import { Server, Brain, Settings as SettingsIcon, Loader2, Trash2, Shield } from "lucide-react";
+import { Server, Brain, Settings as SettingsIcon, Loader2, Trash2, Shield, MessageSquare } from "lucide-react";
 import { useGateway } from "../../../hooks/use-gateway";
 import { useSettings } from "../../../hooks/use-settings";
 import {
@@ -18,6 +18,7 @@ import {
 import { GatewayView } from "./views/gateway-view";
 import { LLMView } from "./views/llm-view";
 import { SecurityView } from "./views/security-view";
+import { ChannelsView } from "./views/channels-view";
 
 interface SettingsProps {
   gatewayClient: GatewayClient | null;
@@ -25,7 +26,7 @@ interface SettingsProps {
   onGatewayConfigChange?: (host: string, port: number) => void;
 }
 
-type SettingsTab = "gateway" | "llm" | "security" | "advanced";
+type SettingsTab = "gateway" | "channels" | "llm" | "security" | "advanced";
 
 export function SettingsView({
   gatewayClient,
@@ -92,6 +93,7 @@ export function SettingsView({
 
   const tabs: Array<{ id: SettingsTab; label: string; icon: React.ReactNode }> = [
     { id: "gateway", label: "Gateway", icon: <Server className="h-4 w-4" /> },
+    { id: "channels", label: "Channels", icon: <MessageSquare className="h-4 w-4" /> },
     { id: "llm", label: "LLM Provider", icon: <Brain className="h-4 w-4" /> },
     { id: "security", label: "Security", icon: <Shield className="h-4 w-4" /> },
     { id: "advanced", label: "Advanced", icon: <SettingsIcon className="h-4 w-4" /> },
@@ -127,6 +129,7 @@ export function SettingsView({
             </h1>
             <p className="text-sm text-muted-foreground">
               {activeTab === "gateway" && "Turn the gateway server on or off."}
+              {activeTab === "channels" && "Connect and manage messaging channels like WhatsApp, Telegram, and more."}
               {activeTab === "llm" && "Configure your LLM provider and API keys."}
               {activeTab === "security" && "Configure security settings and tool restrictions."}
               {activeTab === "advanced" && "Configure gateway connection settings and advanced options."}
@@ -159,6 +162,10 @@ export function SettingsView({
                   }
                 }}
               />
+            )}
+
+            {activeTab === "channels" && (
+              <ChannelsView gatewayClient={gatewayClient} />
             )}
 
             {activeTab === "llm" && (

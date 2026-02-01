@@ -2,6 +2,8 @@ import { Command } from "commander";
 import { WhatsAppChannel } from "@server/world/communication/messengers/channels/whatsapp.js";
 import { loadConfig, saveConfig } from "@server/world/config/index.js";
 import { outputJson, shouldOutputJson } from "../utils/json-output.js";
+// qrcode-terminal is CommonJS, needs special handling in ESM
+import qrcodeTerminal from "qrcode-terminal";
 
 export function createChannelsCommand(): Command {
   const cmd = new Command("channels")
@@ -123,6 +125,16 @@ async function loginWhatsApp(): Promise<void> {
 
   const channel = new WhatsAppChannel(config.channels.whatsapp, (qr) => {
     console.log("\n✅ QR Code generated! Scan it with WhatsApp.\n");
+    // Print QR code to terminal
+    const qrModule = qrcodeTerminal as any;
+    if (qrModule.default?.generate) {
+      qrModule.default.generate(qr, { small: true });
+    } else if (qrModule.generate) {
+      qrModule.generate(qr, { small: true });
+    } else {
+      console.log("QR Code:", qr);
+    }
+    console.log("\n");
   });
 
   try {

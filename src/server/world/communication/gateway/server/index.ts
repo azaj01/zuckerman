@@ -78,6 +78,7 @@ export async function startGatewayServer(
     agentFactory,
     router,
     channelRegistry,
+    broadcastEvent,
   });
 
   // Track connections (logging is handled in handleConnection)

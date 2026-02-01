@@ -11,7 +11,7 @@ import {
 import type { Channel, ChannelMessage } from "./types.js";
 import type { WhatsAppConfig } from "@server/world/config/types.js";
 import { join } from "node:path";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import pino from "pino";
 // qrcode-terminal is CommonJS, needs special handling in ESM
@@ -109,12 +109,24 @@ export class WhatsAppChannel implements Channel {
           } else {
             console.log("[WhatsApp] Logged out, please scan QR code again");
             this.isRunning = false;
+            // Clear credentials cache on logout
+            this.clearCredentials();
+            // Notify about disconnection
+            if (this.connectionStatusCallback) {
+              this.connectionStatusCallback(false);
+            }
           }
+        } else if (connection === "connecting") {
+          console.log("[WhatsApp] Connecting... (QR code may have been scanned)");
+          // Don't set isRunning yet, wait for "open"
         } else if (connection === "open") {
           console.log("[WhatsApp] Connected successfully");
           this.isRunning = true;
           if (this.connectionStatusCallback) {
+            console.log("[WhatsApp] Calling connection status callback with connected=true");
             this.connectionStatusCallback(true);
+          } else {
+            console.warn("[WhatsApp] No connection status callback registered");
           }
         }
       });
@@ -143,6 +155,20 @@ export class WhatsAppChannel implements Channel {
       this.socket = null;
     }
     this.isRunning = false;
+  }
+
+  /**
+   * Clear WhatsApp credentials cache
+   */
+  private clearCredentials(): void {
+    try {
+      if (existsSync(AUTH_DIR)) {
+        rmSync(AUTH_DIR, { recursive: true, force: true });
+        console.log("[WhatsApp] Credentials cache cleared");
+      }
+    } catch (error) {
+      console.error("[WhatsApp] Failed to clear credentials cache:", error);
+    }
   }
 
   async send(message: string, to: string): Promise<void> {

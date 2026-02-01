@@ -31,46 +31,132 @@ export function ChannelStep({
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const qrTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const isWaitingForQrRef = React.useRef(false);
+  const connectionPollIntervalRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Helper to clear QR timeout
+  const clearQrTimeout = React.useCallback(() => {
+    if (qrTimeoutRef.current) {
+      clearTimeout(qrTimeoutRef.current);
+      qrTimeoutRef.current = null;
+    }
+    isWaitingForQrRef.current = false;
+  }, []);
+
+  // Helper to stop connection polling
+  const stopConnectionPolling = React.useCallback(() => {
+    if (connectionPollIntervalRef.current) {
+      clearInterval(connectionPollIntervalRef.current);
+      connectionPollIntervalRef.current = null;
+    }
+  }, []);
+
+  // Helper to reset WhatsApp state
+  const resetWhatsAppState = React.useCallback(() => {
+    clearQrTimeout();
+    stopConnectionPolling();
+    setQrCode(null);
+    setConnecting(false);
+    setError(null);
+  }, [clearQrTimeout, stopConnectionPolling]);
+
+  // Helper to mark as connected
+  const markConnected = React.useCallback(() => {
+    clearQrTimeout();
+    stopConnectionPolling();
+    setConnected(true);
+    setQrCode(null);
+    setConnecting(false);
+    setError(null);
+    onUpdate({
+      channel: {
+        type: "whatsapp",
+        connected: true,
+        qrCode: null,
+      },
+    });
+  }, [clearQrTimeout, stopConnectionPolling, onUpdate]);
 
   // Listen for QR code and connection events from gateway
   useEffect(() => {
+    if (selectedChannel !== "whatsapp") return;
+
     const handleQrEvent = (e: CustomEvent<{ qr: string; channelId: string }>) => {
-      if (e.detail.channelId === "whatsapp" && selectedChannel === "whatsapp") {
+      if (e.detail.channelId === "whatsapp") {
+        clearQrTimeout();
         setQrCode(e.detail.qr);
         setConnecting(false);
+        setError(null);
+        isWaitingForQrRef.current = false;
+        
+        // Start polling for connection status after QR code is shown
+        if (gatewayClient && gatewayClient.isConnected()) {
+          stopConnectionPolling();
+          let pollCount = 0;
+          const maxPolls = 60; // Poll for max 2 minutes (60 * 2s)
+          
+          connectionPollIntervalRef.current = setInterval(async () => {
+            pollCount++;
+            
+            // Stop polling after max attempts
+            if (pollCount > maxPolls) {
+              stopConnectionPolling();
+              return;
+            }
+            
+            try {
+              const statusResponse = await gatewayClient.request("channels.status", {}) as {
+                ok: boolean;
+                result?: { status?: Array<{ id: string; connected: boolean }> };
+              };
+              
+              if (!statusResponse.ok) {
+                console.debug("[ChannelStep] Status check failed:", statusResponse);
+                return;
+              }
+              
+              const whatsappStatus = statusResponse.result?.status?.find((s) => s.id === "whatsapp");
+              if (whatsappStatus?.connected) {
+                markConnected();
+              }
+            } catch (err) {
+              console.debug("[ChannelStep] Error polling connection status:", err);
+            }
+          }, 2000); // Poll every 2 seconds
+        }
       }
     };
 
     const handleConnectionEvent = (e: CustomEvent<{ connected: boolean; channelId: string }>) => {
-      if (e.detail.channelId === "whatsapp" && selectedChannel === "whatsapp") {
+      console.log("[ChannelStep] Received whatsapp-connection event", e.detail);
+      if (e.detail.channelId === "whatsapp") {
         if (e.detail.connected) {
-          setConnected(true);
-          setQrCode(null);
-          setConnecting(false);
-          onUpdate({
-            channel: {
-              type: "whatsapp",
-              connected: true,
-              qrCode: null,
-            },
-          });
+          console.log("[ChannelStep] Marking WhatsApp as connected");
+          markConnected();
+        } else {
+          console.log("[ChannelStep] WhatsApp disconnected");
+          setConnected(false);
         }
       }
     };
 
     window.addEventListener("whatsapp-qr", handleQrEvent as EventListener);
     window.addEventListener("whatsapp-connection", handleConnectionEvent as EventListener);
+    
     return () => {
       window.removeEventListener("whatsapp-qr", handleQrEvent as EventListener);
       window.removeEventListener("whatsapp-connection", handleConnectionEvent as EventListener);
+      clearQrTimeout();
+      stopConnectionPolling();
     };
-  }, [selectedChannel, onUpdate]);
+  }, [selectedChannel, clearQrTimeout, markConnected, stopConnectionPolling, gatewayClient]);
 
   const handleChannelSelect = (channel: ChannelType) => {
+    resetWhatsAppState();
+    stopConnectionPolling();
     setSelectedChannel(channel);
     setConnected(false);
-    setQrCode(null);
-    setError(null);
     onUpdate({
       channel: {
         type: channel,
@@ -80,11 +166,82 @@ export function ChannelStep({
     });
   };
 
+  // Connect WhatsApp channel
+  const connectWhatsApp = React.useCallback(async (client: GatewayClient) => {
+    // Enable WhatsApp in config
+    const configResponse = await client.request("config.update", {
+      updates: {
+        channels: {
+          whatsapp: {
+            enabled: true,
+            dmPolicy: "pairing",
+            allowFrom: [],
+          },
+        },
+      },
+    }) as { ok: boolean; error?: { message: string } };
+
+    if (!configResponse.ok) {
+      throw new Error(configResponse.error?.message || "Failed to update config");
+    }
+
+    // Reload channels to pick up the new config
+    const reloadResponse = await client.request("channels.reload", {}) as {
+      ok: boolean;
+      error?: { message: string };
+    };
+
+    if (!reloadResponse.ok) {
+      throw new Error(reloadResponse.error?.message || "Failed to reload channels");
+    }
+
+    // Start WhatsApp channel
+    const startResponse = await client.request("channels.start", {
+      channelId: "whatsapp",
+    }) as { ok: boolean; error?: { message: string } };
+
+    if (!startResponse.ok) {
+      throw new Error(startResponse.error?.message || "Failed to start WhatsApp");
+    }
+
+    // Check if already connected (credentials exist)
+    try {
+      const statusResponse = await client.request("channels.status", {}) as {
+        ok: boolean;
+        result?: { status?: Array<{ id: string; connected: boolean }> };
+      };
+      
+      if (statusResponse.ok) {
+        const whatsappStatus = statusResponse.result?.status?.find((s) => s.id === "whatsapp");
+        if (whatsappStatus?.connected) {
+          markConnected();
+          return;
+        }
+      }
+    } catch {
+      // Continue with QR code flow if status check fails
+    }
+
+    // Wait for QR code via WebSocket event
+    setQrCode("pending");
+    setConnecting(false);
+    isWaitingForQrRef.current = true;
+    
+    // Set timeout for QR code generation
+    qrTimeoutRef.current = setTimeout(() => {
+      if (isWaitingForQrRef.current) {
+        setError("QR code generation timed out. Please try again.");
+        resetWhatsAppState();
+      }
+    }, 15000);
+  }, [markConnected, resetWhatsAppState]);
+
   const handleConnect = async () => {
     if (!gatewayClient || selectedChannel === "none") return;
 
     setConnecting(true);
     setError(null);
+    clearQrTimeout();
 
     try {
       // Ensure gateway is connected
@@ -93,54 +250,11 @@ export function ChannelStep({
       }
 
       if (selectedChannel === "whatsapp") {
-        try {
-          // First, enable WhatsApp in config
-          const configResponse = await gatewayClient.request("config.update", {
-            updates: {
-              channels: {
-                whatsapp: {
-                  enabled: true,
-                  dmPolicy: "pairing",
-                  allowFrom: [],
-                },
-              },
-            },
-          }) as { ok: boolean; error?: { message: string } };
-
-          if (!configResponse.ok) {
-            throw new Error(configResponse.error?.message || "Failed to update config");
-          }
-
-          // Reload channels to pick up the new config
-          const reloadResponse = await gatewayClient.request("channels.reload", {}) as {
-            ok: boolean;
-            error?: { message: string };
-          };
-
-          if (!reloadResponse.ok) {
-            throw new Error(reloadResponse.error?.message || "Failed to reload channels");
-          }
-
-          // Now start WhatsApp channel
-          const startResponse = await gatewayClient.request("channels.start", {
-            channelId: "whatsapp",
-          }) as { ok: boolean; error?: { message: string } };
-
-          if (!startResponse.ok) {
-            throw new Error(startResponse.error?.message || "Failed to start WhatsApp");
-          }
-
-          // For WhatsApp, QR code will be received via WebSocket event
-          // Set pending state - QR code will come through event listener
-          setQrCode("pending");
-          setConnecting(false); // QR generation happens asynchronously
-        } catch (err: any) {
-          setError(err.message || "Failed to connect WhatsApp");
-          setConnecting(false);
-        }
+        await connectWhatsApp(gatewayClient);
       } else {
-        // For other channels, mark as configured (they'll need tokens later)
+        // For other channels, mark as configured
         setConnected(true);
+        setConnecting(false);
         onUpdate({
           channel: {
             type: selectedChannel,
@@ -150,10 +264,8 @@ export function ChannelStep({
         });
       }
     } catch (err: any) {
+      resetWhatsAppState();
       setError(err.message || "Failed to connect channel");
-      setConnecting(false);
-    } finally {
-      setConnecting(false);
     }
   };
 
@@ -291,10 +403,15 @@ export function ChannelStep({
                     <div className="p-4 bg-white rounded-lg">
                       <QRCodeSVG value={qrCode} size={200} level="M" />
                     </div>
-                    {connecting && (
-                      <div className="flex items-center gap-2 text-xs text-[#8b949e]">
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        <span>Detecting scan...</span>
+                    {!connected && (
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="flex items-center gap-2 text-xs text-[#8b949e]">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <span>Waiting for scan...</span>
+                        </div>
+                        <div className="text-xs text-[#8b949e] opacity-70">
+                          Scan the QR code above with your WhatsApp app
+                        </div>
                       </div>
                     )}
                   </div>
