@@ -1,8 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { MemoryRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { useAppState } from "./hooks/use-app-state";
-import { Sidebar } from "./layout/sidebar";
-import { TitleBar } from "./layout/title-bar";
+import { Sidebar } from "./components/layout/sidebar";
+import { TitleBar } from "./components/layout/title-bar";
 import { OnboardingFlow } from "./features/onboarding/onboarding-flow";
 import { ConnectionError } from "./features/gateway/connection-error";
 import { HomePage } from "./features/home/home-page";

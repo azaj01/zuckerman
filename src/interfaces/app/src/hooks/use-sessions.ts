@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { GatewayClient } from "../core/gateway/client";
 import type { Session, SessionType } from "../types/session";
-import { SessionService } from "../core/session-service";
+import { SessionService } from "../core/sessions/session-service";
 
 export interface UseSessionsReturn {
   sessions: Session[];

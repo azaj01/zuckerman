@@ -8,7 +8,9 @@
     "paths": {
       "@world/*": ["src/world/*"],
       "@agents/*": ["src/agents/*"],
-      "@interfaces/*": ["src/interfaces/*"]
+      "@interfaces/*": ["src/interfaces/*"],
+      "@main/*": ["src/interfaces/app/src/main/*"],
+      "@core/*": ["src/interfaces/app/src/core/*"]
     },
     "strict": true,
     "esModuleInterop": true,

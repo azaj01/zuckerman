@@ -1,5 +1,5 @@
 import { Menu, MenuItemConstructorOptions, app } from "electron";
-import { windowManager } from "./window.js";
+import { windowManager } from "@main/window.js";
 
 export function createApplicationMenu(): Menu {
   const template: MenuItemConstructorOptions[] = [

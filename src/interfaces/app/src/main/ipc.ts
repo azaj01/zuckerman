@@ -1,6 +1,6 @@
 import { ipcMain, app } from "electron";
-import { startGateway, stopGateway, getGatewayStatus, cleanupGateway, getGatewayLogs, clearGatewayLogs } from "./gateway-manager.js";
-import { getApiKeys, saveApiKeys } from "./env-manager.js";
+import { startGateway, stopGateway, getGatewayStatus, cleanupGateway, getGatewayLogs, clearGatewayLogs } from "@core/gateway/gateway-manager.js";
+import { getApiKeys, saveApiKeys } from "@main/env-manager.js";
 import { appendFileSync } from "node:fs";
 
 export function setupIpcHandlers(): void {

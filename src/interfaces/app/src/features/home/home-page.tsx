@@ -1,6 +1,6 @@
 import React from "react";
 import { ChatView } from "./session/chat-view";
-import { StatusBar } from "../../layout/status-bar";
+import { StatusBar } from "../../components/layout/status-bar";
 import type { AppState } from "../../types/app-state";
 
 interface HomePageProps {

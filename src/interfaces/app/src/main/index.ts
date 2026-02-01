@@ -1,10 +1,10 @@
 import { app, BrowserWindow, Menu } from "electron";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
-import { windowManager } from "./window.js";
-import { createApplicationMenu } from "./menu.js";
-import { setupIpcHandlers } from "./ipc.js";
-import { cleanupGateway } from "./gateway-manager.js";
+import { windowManager } from "@main/window.js";
+import { createApplicationMenu } from "@main/menu.js";
+import { setupIpcHandlers } from "@main/ipc.js";
+import { cleanupGateway } from "@core/gateway/gateway-manager.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

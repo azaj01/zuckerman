@@ -1,6 +1,6 @@
 import { BrowserWindow, BrowserWindowConstructorOptions } from "electron";
 import { join } from "node:path";
-import { APP_CONFIG } from "./config.js";
+import { APP_CONFIG } from "@main/config.js";
 
 export class WindowManager {
   private mainWindow: BrowserWindow | null = null;

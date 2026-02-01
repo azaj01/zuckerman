@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import type { GatewayClient } from "../core/gateway/client";
 import type { Message } from "../types/message";
-import { MessageService } from "../core/message-service";
-import { AgentService } from "../core/agent-service";
-import { SessionService } from "../core/session-service";
+import { MessageService } from "../core/messages/message-service";
+import { AgentService } from "../core/agents/agent-service";
+import { SessionService } from "../core/sessions/session-service";
 
 export interface UseMessagesReturn {
   messages: Message[];

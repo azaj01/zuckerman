@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { GatewayClient } from "../core/gateway/client";
-import { AgentService } from "../core/agent-service";
+import { AgentService } from "../core/agents/agent-service";
 
 export interface UseAgentsReturn {
   agents: string[];

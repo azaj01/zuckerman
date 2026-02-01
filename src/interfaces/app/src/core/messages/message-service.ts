@@ -1,6 +1,6 @@
 import type { GatewayClient } from "../core/gateway/client";
 import type { Message, BackendMessage } from "../types/message";
-import { SessionService } from "./session-service";
+import { SessionService } from "../sessions/session-service";
 
 /**
  * Message service - handles message operations including deduplication

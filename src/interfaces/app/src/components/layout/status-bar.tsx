@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import type { AppState } from "../types/app-state";
-import { HealthService } from "../core/health-service";
+import type { AppState } from "@types/app-state";
+import { HealthService } from "@core/health/health-service";
 
 interface StatusBarProps {
   state: AppState;

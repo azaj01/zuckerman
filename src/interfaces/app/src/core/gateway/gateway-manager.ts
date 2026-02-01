@@ -1,5 +1,5 @@
-import { killPort } from "./kill-port.js";
-import { isGatewayRunning } from "./gateway-status.js";
+import { killPort } from "@core/utils/kill-port.js";
+import { isGatewayRunning } from "@core/gateway/gateway-status.js";
 import { startGatewayServer, type GatewayServer } from "@world/communication/gateway/server/index.js";
 import { appendFileSync } from "node:fs";
 
