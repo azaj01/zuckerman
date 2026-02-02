@@ -304,7 +304,10 @@ export function Sidebar({ state, activeConversationIds, onAction }: SidebarProps
             alwaysExpanded={activeConversations.length > 0}
             actionButton={
               <button
-                onClick={() => onAction("new-conversation", {})}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAction("new-conversation", {});
+                }}
                 className="p-1 rounded-md hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
                 title="New conversation"
               >
