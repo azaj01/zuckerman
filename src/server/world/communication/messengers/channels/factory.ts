@@ -4,7 +4,6 @@ import { TelegramChannel } from "./telegram.js";
 import { DiscordChannel } from "./discord.js";
 import { SignalChannel } from "./signal.js";
 import { SlackChannel } from "./slack.js";
-import { WebChatChannel } from "./webchat.js";
 import type { ZuckermanConfig } from "@server/world/config/types.js";
 import type { SimpleRouter } from "@server/world/communication/routing/index.js";
 import type { SessionManager } from "@server/agents/zuckerman/sessions/index.js";
@@ -92,7 +91,7 @@ export async function initializeChannels(
 
         // Store channel metadata for tool access
         await sm.updateChannelMetadata(route.sessionId, {
-          channel: channelId,
+          channel: "whatsapp",
           to: message.from,
           accountId: "default",
         });
@@ -297,19 +296,6 @@ export async function initializeChannels(
       type: "slack",
       enabled: config.channels.slack.enabled,
       config: config.channels.slack as Record<string, unknown>,
-    });
-  }
-
-  // Initialize WebChat if enabled
-  if (config.channels?.webchat?.enabled) {
-    const webchatChannel = new WebChatChannel(config.channels.webchat);
-    await setupChannelRouting(webchatChannel, "webchat", "webchat");
-    
-    registry.register(webchatChannel, {
-      id: "webchat",
-      type: "webchat",
-      enabled: config.channels.webchat.enabled,
-      config: config.channels.webchat as Record<string, unknown>,
     });
   }
 

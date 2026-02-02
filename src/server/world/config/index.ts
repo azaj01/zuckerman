@@ -12,7 +12,6 @@ export type {
   SlackConfig,
   SignalConfig,
   IMessageConfig,
-  WebChatConfig,
   LLMConfig, 
   GatewayConfig 
 } from "./types.js";

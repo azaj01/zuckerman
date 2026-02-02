@@ -13,17 +13,23 @@ export function createChannelsCommand(): Command {
     .command("login")
     .description("Login/pair a messaging channel (e.g., WhatsApp)")
     .option("-c, --channel <channel>", "Channel to login (whatsapp, telegram, etc.)", "whatsapp")
+    .option("--json", "Output as JSON")
     .action(async (options) => {
       const channel = options.channel.toLowerCase();
 
       if (channel === "whatsapp") {
-        await loginWhatsApp();
+        await loginWhatsApp(options);
       } else if (channel === "discord") {
-        await loginDiscord();
+        await loginDiscord(options);
       } else if (channel === "signal") {
-        await loginSignal();
+        await loginSignal(options);
       } else {
-        console.error(`Channel "${channel}" is not yet supported`);
+        const error = `Channel "${channel}" is not yet supported`;
+        if (shouldOutputJson(options)) {
+          outputJson({ error }, options);
+        } else {
+          console.error(error);
+        }
         process.exit(1);
       }
     });
@@ -216,10 +222,14 @@ export function createChannelsCommand(): Command {
   return cmd;
 }
 
-async function loginWhatsApp(): Promise<void> {
-  console.log("\n📱 WhatsApp Login\n");
-  console.log("This will start WhatsApp Web pairing.");
-  console.log("Scan the QR code that appears with your WhatsApp app.\n");
+async function loginWhatsApp(options: { json?: boolean } = {}): Promise<void> {
+  const isJson = shouldOutputJson(options);
+
+  if (!isJson) {
+    console.log("\n📱 WhatsApp Login\n");
+    console.log("This will start WhatsApp Web pairing.");
+    console.log("Scan the QR code that appears with your WhatsApp app.\n");
+  }
 
   const config = await loadConfig();
 
@@ -239,41 +249,83 @@ async function loginWhatsApp(): Promise<void> {
   const originalEnabled = config.channels.whatsapp.enabled;
   config.channels.whatsapp.enabled = true;
 
-  const channel = new WhatsAppChannel(config.channels.whatsapp, (qr) => {
-    console.log("\n✅ QR Code generated! Scan it with WhatsApp.\n");
-    // Print QR code to terminal
-    const qrModule = qrcodeTerminal as any;
-    if (qrModule.default?.generate) {
-      qrModule.default.generate(qr, { small: true });
-    } else if (qrModule.generate) {
-      qrModule.generate(qr, { small: true });
-    } else {
-      console.log("QR Code:", qr);
+  const channel = new WhatsAppChannel(
+    config.channels.whatsapp,
+    (qr) => {
+      // Handle QR code clearing (empty string means cleared)
+      if (!qr || qr.length === 0) {
+        if (isJson) {
+          outputJson({ event: "qr_cleared" }, options);
+        }
+        return;
+      }
+      
+      if (isJson) {
+        outputJson({ event: "qr_code", qr }, options);
+      } else {
+        console.log("\n✅ QR Code generated! Scan it with WhatsApp.\n");
+        // Print QR code to terminal
+        const qrModule = qrcodeTerminal as any;
+        if (qrModule.default?.generate) {
+          qrModule.default.generate(qr, { small: true });
+        } else if (qrModule.generate) {
+          qrModule.generate(qr, { small: true });
+        } else {
+          console.log("QR Code:", qr);
+        }
+        console.log("\n");
+      }
+    },
+    (connected) => {
+      // Connection status callback
+      if (isJson) {
+        outputJson({ event: "connection_status", connected }, options);
+      } else {
+        if (connected) {
+          console.log("[WhatsApp] Connection status: Connected");
+        } else {
+          console.log("[WhatsApp] Connection status: Disconnected");
+        }
+      }
     }
-    console.log("\n");
-  });
+  );
 
   try {
     await channel.start();
 
-    // Wait for connection
-    console.log("Waiting for connection...");
-    console.log("(Press Ctrl+C to cancel)\n");
+    if (!isJson) {
+      // Wait for connection
+      console.log("Waiting for connection...");
+      console.log("(Press Ctrl+C to cancel)\n");
+    }
 
     // Poll for connection status
     const checkInterval = setInterval(() => {
       if (channel.isConnected()) {
         clearInterval(checkInterval);
-        console.log("\n✅ WhatsApp connected successfully!\n");
         
         // Save config with enabled flag
         config.channels!.whatsapp!.enabled = true;
         saveConfig(config).then(() => {
-          console.log("WhatsApp is now enabled in your config.");
-          console.log("You can add contacts to 'allowFrom' in .zuckerman/config.json\n");
+          if (isJson) {
+            outputJson({ 
+              event: "connected", 
+              success: true,
+              message: "WhatsApp connected successfully" 
+            }, options);
+          } else {
+            console.log("\n✅ WhatsApp connected successfully!\n");
+            console.log("WhatsApp is now enabled in your config.");
+            console.log("You can add contacts to 'allowFrom' in .zuckerman/config.json\n");
+          }
           process.exit(0);
         }).catch((err) => {
-          console.error("Failed to save config:", err);
+          const errorMsg = `Failed to save config: ${err}`;
+          if (isJson) {
+            outputJson({ event: "error", error: errorMsg }, options);
+          } else {
+            console.error(errorMsg);
+          }
           process.exit(1);
         });
       }
@@ -285,18 +337,28 @@ async function loginWhatsApp(): Promise<void> {
       await channel.stop();
       config.channels!.whatsapp!.enabled = originalEnabled;
       await saveConfig(config);
-      console.log("\n\nLogin cancelled.");
+      if (isJson) {
+        outputJson({ event: "cancelled" }, options);
+      } else {
+        console.log("\n\nLogin cancelled.");
+      }
       process.exit(0);
     });
   } catch (error) {
-    console.error("\n❌ Failed to start WhatsApp:", error);
+    const errorMsg = `Failed to start WhatsApp: ${error}`;
     config.channels!.whatsapp!.enabled = originalEnabled;
     await saveConfig(config);
+    if (isJson) {
+      outputJson({ event: "error", error: errorMsg }, options);
+    } else {
+      console.error("\n❌", errorMsg);
+    }
     process.exit(1);
   }
 }
 
-async function loginDiscord(): Promise<void> {
+async function loginDiscord(options: { json?: boolean } = {}): Promise<void> {
+  const isJson = shouldOutputJson(options);
   console.log("\n💬 Discord Login\n");
   console.log("This will configure Discord bot connection.");
   console.log("You need a Discord bot token from https://discord.com/developers/applications\n");
@@ -357,7 +419,8 @@ async function loginDiscord(): Promise<void> {
   }
 }
 
-async function loginSignal(): Promise<void> {
+async function loginSignal(options: { json?: boolean } = {}): Promise<void> {
+  const isJson = shouldOutputJson(options);
   console.log("\n📱 Signal Login\n");
   console.log("Signal integration requires signal-cli to be installed and configured.");
   console.log("For more information, visit: https://github.com/AsamK/signal-cli\n");

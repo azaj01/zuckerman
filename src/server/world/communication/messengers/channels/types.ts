@@ -1,5 +1,5 @@
 export type ChannelId = string;
-export type ChannelType = "whatsapp" | "telegram" | "slack" | "discord" | "signal" | "imessage" | "webchat";
+export type ChannelType = "whatsapp" | "telegram" | "slack" | "discord" | "signal" | "imessage";
 
 export interface ChannelConfig {
   id: ChannelId;

@@ -3,8 +3,9 @@ import { ChannelRegistry } from "@server/world/communication/messengers/channels
 import { SimpleRouter } from "@server/world/communication/routing/index.js";
 import { SessionManager } from "@server/agents/zuckerman/sessions/index.js";
 import { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
-import { loadConfig } from "@server/world/config/index.js";
+import { loadConfig, saveConfig } from "@server/world/config/index.js";
 import { initializeChannels } from "@server/world/communication/messengers/channels/factory.js";
+import { WhatsAppChannel } from "@server/world/communication/messengers/channels/whatsapp.js";
 
 export function createChannelHandlers(
   channelRegistry: ChannelRegistry,
@@ -35,11 +36,12 @@ export function createChannelHandlers(
       try {
         const channels = channelRegistry.list();
         const status = channels.map((ch) => {
-          const whatsapp = ch as any;
+          const registryStatus = channelRegistry.getStatus(ch.id);
           return {
             id: ch.id,
             type: ch.type,
-            connected: whatsapp.isConnected ? whatsapp.isConnected() : false,
+            status: registryStatus,
+            connected: ch.isConnected(),
           };
         });
         respond(true, { status });
@@ -62,16 +64,7 @@ export function createChannelHandlers(
           return;
         }
 
-        const channel = channelRegistry.get(channelId);
-        if (!channel) {
-          respond(false, undefined, {
-            code: "CHANNEL_NOT_FOUND",
-            message: `Channel "${channelId}" not found`,
-          });
-          return;
-        }
-
-        await channel.start();
+        await channelRegistry.start(channelId);
         respond(true, { channelId, started: true });
       } catch (err) {
         respond(false, undefined, {
@@ -92,16 +85,7 @@ export function createChannelHandlers(
           return;
         }
 
-        const channel = channelRegistry.get(channelId);
-        if (!channel) {
-          respond(false, undefined, {
-            code: "CHANNEL_NOT_FOUND",
-            message: `Channel "${channelId}" not found`,
-          });
-          return;
-        }
-
-        await channel.stop();
+        await channelRegistry.stop(channelId);
         respond(true, { channelId, stopped: true });
       } catch (err) {
         respond(false, undefined, {
@@ -147,6 +131,137 @@ export function createChannelHandlers(
         respond(false, undefined, {
           code: "ERROR",
           message: err instanceof Error ? err.message : "Failed to reload channels",
+        });
+      }
+    },
+
+    "channels.login": async ({ respond, params }) => {
+      try {
+        const channelId = params?.channelId as string | undefined;
+        const jsonMode = params?.json !== false; // Default to JSON mode (always true for app)
+        
+        if (!channelId) {
+          respond(false, undefined, {
+            code: "INVALID_REQUEST",
+            message: "Missing channelId",
+          });
+          return;
+        }
+
+        if (channelId !== "whatsapp") {
+          respond(false, undefined, {
+            code: "NOT_SUPPORTED",
+            message: `Login for channel "${channelId}" is not yet supported`,
+          });
+          return;
+        }
+
+        const config = await loadConfig();
+
+        // Ensure WhatsApp config exists
+        if (!config.channels) {
+          config.channels = {};
+        }
+        if (!config.channels.whatsapp) {
+          config.channels.whatsapp = {
+            enabled: false,
+            dmPolicy: "pairing",
+            allowFrom: [],
+          };
+        }
+
+        // Temporarily enable for login
+        const originalEnabled = config.channels.whatsapp.enabled;
+        config.channels.whatsapp.enabled = true;
+
+        // Create channel with callbacks that broadcast events (like factory does)
+        const whatsappChannel = new WhatsAppChannel(
+          config.channels.whatsapp,
+          (qr) => {
+            // Broadcast QR code to all connected gateway clients
+            // Empty string means QR was cleared
+            if (broadcastEvent) {
+              if (qr && qr.length > 0) {
+                broadcastEvent({
+                  type: "event",
+                  event: "channel.whatsapp.qr",
+                  payload: { qr, channelId: "whatsapp", ts: Date.now() },
+                });
+              } else {
+                // Broadcast QR cleared event
+                broadcastEvent({
+                  type: "event",
+                  event: "channel.whatsapp.qr",
+                  payload: { qr: null, channelId: "whatsapp", cleared: true, ts: Date.now() },
+                });
+              }
+            }
+          },
+          (connected) => {
+            // Broadcast connection status to all connected gateway clients
+            if (broadcastEvent) {
+              broadcastEvent({
+                type: "event",
+                event: "channel.whatsapp.connection",
+                payload: { connected, channelId: "whatsapp", ts: Date.now() },
+              });
+            }
+          },
+        );
+
+        // Stop existing channel if it exists (register will overwrite it)
+        try {
+          await channelRegistry.stop("whatsapp");
+        } catch {
+          // Channel doesn't exist, that's fine
+        }
+
+        // Register the channel in the registry first (before starting)
+        channelRegistry.register(whatsappChannel, {
+          id: "whatsapp",
+          type: "whatsapp",
+          enabled: true,
+          config: config.channels.whatsapp as Record<string, unknown>,
+        });
+
+        // Start the channel (non-blocking - don't await to avoid blocking the handler)
+        // QR code and connection status will be emitted via broadcastEvent
+        whatsappChannel.start().then(async () => {
+          // After start completes, check if connected (might have credentials)
+          // Small delay to allow socket to initialize
+          setTimeout(async () => {
+            if (whatsappChannel.isConnected()) {
+              if (config.channels && config.channels.whatsapp) {
+                config.channels.whatsapp.enabled = true;
+                await saveConfig(config);
+              }
+              // Connection status already broadcast via callback above
+            }
+          }, 500);
+        }).catch((err) => {
+          console.error("[Gateway] Failed to start WhatsApp channel:", err);
+          // Broadcast error event if needed
+          if (broadcastEvent) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            broadcastEvent({
+              type: "event",
+              event: "channel.whatsapp.connection",
+              payload: { connected: false, channelId: "whatsapp", error: errorMessage, ts: Date.now() },
+            });
+          }
+        });
+
+        // Respond immediately - don't wait for start() to complete
+        // QR code will be emitted via broadcastEvent (channel.whatsapp.qr)
+        // Connection status will be emitted via broadcastEvent (channel.whatsapp.connection)
+        respond(true, {
+          event: "qr_pending",
+          message: "QR code will be sent via channel.whatsapp.qr event",
+        });
+      } catch (err) {
+        respond(false, undefined, {
+          code: "ERROR",
+          message: err instanceof Error ? err.message : "Failed to login channel",
         });
       }
     },

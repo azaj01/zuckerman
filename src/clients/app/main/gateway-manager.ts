@@ -1,6 +1,9 @@
 import { killPort } from "./kill-port.js";
 import { isGatewayRunning } from "./gateway-status.js";
 import { startGatewayServer, type GatewayServer } from "@server/world/communication/gateway/server/index.js";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 let gatewayServer: GatewayServer | null = null;
 let gatewayPort: number = 18789;
@@ -74,53 +77,99 @@ export async function startGateway(host: string = "127.0.0.1", port: number = 18
 }
 
 /**
- * Stop the gateway server
+ * Stop the gateway server using CLI command
  */
 export async function stopGateway(host: string = "127.0.0.1", port: number = 18789): Promise<{ success: boolean; error?: string }> {
-  // #region agent log
-  const fs = await import('node:fs');
-  const logPath = '/Users/dvirdaniel/Desktop/zuckerman/.cursor/debug.log';
-  fs.appendFileSync(logPath, JSON.stringify({location:'gateway-manager.ts:79',message:'stopGateway called',data:{host,port,hasGatewayServer:!!gatewayServer},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})+'\n');
-  // #endregion
   try {
-    // Close the server instance if we have it
+    // Close the server instance if we have it (for locally started servers)
     if (gatewayServer) {
-      // #region agent log
-      fs.appendFileSync(logPath, JSON.stringify({location:'gateway-manager.ts:85',message:'closing gatewayServer',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})+'\n');
-      // #endregion
-      await gatewayServer.close("Stopped via API");
-      gatewayServer = null;
-      // #region agent log
-      fs.appendFileSync(logPath, JSON.stringify({location:'gateway-manager.ts:88',message:'gatewayServer closed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})+'\n');
-      // #endregion
+      try {
+        await gatewayServer.close("Stopped via API");
+        gatewayServer = null;
+      } catch (err) {
+        console.warn("[Gateway] Error closing local server instance:", err);
+        gatewayServer = null;
+      }
     }
 
-    // Also kill any process on the port (in case it was started externally)
-    // #region agent log
-    fs.appendFileSync(logPath, JSON.stringify({location:'gateway-manager.ts:92',message:'calling killPort',data:{port},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})+'\n');
-    // #endregion
-    await killPort(port);
-    // #region agent log
-    fs.appendFileSync(logPath, JSON.stringify({location:'gateway-manager.ts:94',message:'killPort completed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})+'\n');
-    // #endregion
-
-    // Wait a bit and verify it's stopped
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const stillRunning = await isGatewayRunning(host, port);
-    // #region agent log
-    fs.appendFileSync(logPath, JSON.stringify({location:'gateway-manager.ts:99',message:'status check after stop',data:{stillRunning},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})+'\n');
-    // #endregion
+    // Execute CLI command: zuckerman gateway stop --host <host> --port <port>
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    const projectRoot = join(__dirname, "..", "..", "..", "..");
     
-    if (stillRunning) {
-      return { success: false, error: "Gateway is still running" };
+    // Use pnpm to run the CLI command (pnpm cli gateway stop)
+    // This matches the package.json script: "cli": "tsx src/clients/cli/index.ts"
+    const pnpmPath = join(projectRoot, "node_modules", ".bin", "pnpm");
+    const fs = await import("node:fs");
+    
+    let command: string;
+    let args: string[];
+    
+    if (fs.existsSync(pnpmPath)) {
+      command = pnpmPath;
+      args = ["cli", "gateway", "stop", "--host", host, "--port", String(port)];
+    } else {
+      // Fallback: use tsx directly
+      const tsxPath = join(projectRoot, "node_modules", ".bin", "tsx");
+      const cliScript = join(projectRoot, "src", "clients", "cli", "index.ts");
+      if (fs.existsSync(tsxPath)) {
+        command = tsxPath;
+        args = [cliScript, "gateway", "stop", "--host", host, "--port", String(port)];
+      } else {
+        // Last resort: use npx
+        command = "npx";
+        args = ["-y", "tsx", join(projectRoot, "src", "clients", "cli", "index.ts"), "gateway", "stop", "--host", host, "--port", String(port)];
+      }
     }
+    
+    console.log(`[Gateway] Executing: ${command} ${args.join(" ")}`);
+    
+    return new Promise((resolve) => {
+      const child = spawn(command, args, {
+        cwd: projectRoot,
+        stdio: "pipe",
+      });
 
-    return { success: true };
+      let stdout = "";
+      let stderr = "";
+
+      child.stdout?.on("data", (data) => {
+        stdout += data.toString();
+      });
+
+      child.stderr?.on("data", (data) => {
+        stderr += data.toString();
+      });
+
+      child.on("close", async (code) => {
+        // Wait a bit and verify it's stopped
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const stillRunning = await isGatewayRunning(host, port);
+        
+        if (code === 0 && !stillRunning) {
+          resolve({ success: true });
+        } else if (code === 0 && stillRunning) {
+          // Command succeeded but gateway still running - might be a timing issue
+          // Wait a bit more and check again
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          const stillRunningAfterWait = await isGatewayRunning(host, port);
+          if (!stillRunningAfterWait) {
+            resolve({ success: true });
+          } else {
+            resolve({ success: false, error: "Gateway is still running after stop command" });
+          }
+        } else {
+          const errorMsg = stderr || stdout || `CLI command exited with code ${code}`;
+          resolve({ success: false, error: `Failed to stop gateway: ${errorMsg}` });
+        }
+      });
+
+      child.on("error", (err) => {
+        resolve({ success: false, error: `Failed to execute CLI command: ${err.message}` });
+      });
+    });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
-    // #region agent log
-    fs.appendFileSync(logPath, JSON.stringify({location:'gateway-manager.ts:106',message:'stopGateway error',data:{error:errorMessage},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})+'\n');
-    // #endregion
     return { success: false, error: `Failed to stop gateway: ${errorMessage}` };
   }
 }

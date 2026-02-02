@@ -383,6 +383,10 @@ export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
       connecting = whatsapp.connecting;
       qrCode = whatsapp.qrCode;
       error = whatsapp.error;
+      // Debug logging
+      if (qrCode) {
+        console.log("[ChannelsView] WhatsApp QR code in state:", qrCode.substring(0, 50) + "...");
+      }
     } else if (isTelegram) {
       isConnected = telegram.connected;
       connecting = telegram.connecting;

@@ -18,10 +18,12 @@ import qrcodeTerminal from "qrcode-terminal";
 
 const AUTH_DIR = join(homedir(), ".zuckerman", "credentials", "whatsapp");
 
-enum ConnectionStatus {
-  DISCONNECTED = "disconnected",
+enum ChannelState {
+  IDLE = "idle",
   CONNECTING = "connecting",
   CONNECTED = "connected",
+  STOPPING = "stopping",
+  RESTARTING = "restarting",
 }
 
 export class WhatsAppChannel implements Channel {
@@ -31,17 +33,14 @@ export class WhatsAppChannel implements Channel {
   private socket: WASocket | null = null;
   private config: WhatsAppConfig;
   private messageHandlers: Array<(message: ChannelMessage) => void> = [];
-  private connectionStatus: ConnectionStatus = ConnectionStatus.DISCONNECTED;
+  private state: ChannelState = ChannelState.IDLE;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private qrCodeCallback?: (qr: string) => void;
   private connectionStatusCallback?: (connected: boolean) => void;
   private saveCreds: (() => Promise<void>) | null = null;
-  private isRestarting = false;
   private currentQrCode: string | null = null;
-  private lastConnectionState: ConnectionStatus | null = null;
+  private lastState: ChannelState | null = null;
   private stateUpdateDebounce: NodeJS.Timeout | null = null;
-  private isConnecting = false; // Lock to prevent concurrent connect() calls
-  private isStopped = false; // Flag to prevent reconnection after stop()
 
   constructor(
     config: WhatsAppConfig,
@@ -54,13 +53,7 @@ export class WhatsAppChannel implements Channel {
   }
 
   async start(): Promise<void> {
-    // Prevent concurrent start calls
-    if (this.isConnecting) {
-      console.log("[WhatsApp] Already connecting, skipping duplicate start()");
-      return;
-    }
-
-    if (this.connectionStatus === ConnectionStatus.CONNECTED) {
+    if (this.state === ChannelState.CONNECTED) {
       return;
     }
 
@@ -69,32 +62,34 @@ export class WhatsAppChannel implements Channel {
       return;
     }
 
-    this.isStopped = false; // Reset stopped flag when starting
+    // Reset to IDLE if stopped, then transition to CONNECTING
+    if (this.state === ChannelState.STOPPING || this.state === ChannelState.IDLE) {
+      this.state = ChannelState.IDLE;
+    }
 
     try {
       await this.connect();
     } catch (error) {
       console.error("[WhatsApp] Failed to start:", error);
-      this.connectionStatus = ConnectionStatus.DISCONNECTED;
-      this.isConnecting = false;
+      this.state = ChannelState.IDLE;
       throw error;
     }
   }
 
   private async connect(): Promise<void> {
-    // Prevent concurrent connect calls
-    if (this.isConnecting) {
-      console.log("[WhatsApp] Already connecting, skipping duplicate connect()");
-      return;
-    }
-
-    // Don't connect if stopped or disabled
-    if (this.isStopped || !this.config.enabled) {
+    // Don't connect if stopping, stopped, or disabled
+    if (this.state === ChannelState.STOPPING || !this.config.enabled) {
       console.log("[WhatsApp] Cannot connect - channel stopped or disabled");
+      this.state = ChannelState.IDLE;
       return;
     }
 
-    this.isConnecting = true;
+    // Don't connect if already connecting or connected
+    if (this.state === ChannelState.CONNECTING || this.state === ChannelState.CONNECTED) {
+      return;
+    }
+
+    this.state = ChannelState.CONNECTING;
 
     try {
       // Clean up old socket if exists - remove ALL event listeners first
@@ -136,12 +131,10 @@ export class WhatsAppChannel implements Channel {
       });
 
       this.setupEventHandlers(saveCreds);
-      this.connectionStatus = ConnectionStatus.CONNECTING;
-    } finally {
-      // Reset connecting flag after a short delay to allow socket to initialize
-      setTimeout(() => {
-        this.isConnecting = false;
-      }, 1000);
+      // State is already set to CONNECTING above
+    } catch (error) {
+      this.state = ChannelState.IDLE;
+      throw error;
     }
   }
 
@@ -179,24 +172,26 @@ export class WhatsAppChannel implements Channel {
   private handleConnectionUpdate(update: Partial<ConnectionState>): void {
     const { connection, lastDisconnect, qr } = update;
 
-    // Clear QR code on any connection state change (not just "open")
-    // This ensures QR doesn't persist when connection state changes
-    if (this.currentQrCode && connection !== undefined) {
-      this.clearQrCode();
-    }
-
-    // Handle QR code - only show if not connected and not restarting
+    // Handle QR code FIRST - before clearing, to avoid clearing new QR codes
     if (qr) {
       // Don't show QR if already connected or restarting
-      if (this.connectionStatus === ConnectionStatus.CONNECTED || this.isRestarting) {
+      if (this.state === ChannelState.CONNECTED || this.state === ChannelState.RESTARTING) {
         console.log("[WhatsApp] Ignoring QR code - already connected or restarting");
         return;
       }
       this.handleQrCode(qr);
-      return;
+      // Don't clear QR code if we just received a new one
+      // Continue to handle connection state below
+    } else {
+      // Clear QR code on connection state change (but only if no new QR code)
+      // This ensures QR doesn't persist when connection state changes
+      if (this.currentQrCode && connection !== undefined) {
+        this.clearQrCode();
+      }
     }
 
     // Handle connection state changes with debouncing
+    // Only process connection state if we didn't just handle a QR code (or if QR was handled, continue)
     if (connection === "open") {
       this.handleConnected();
     } else if (connection === "connecting") {
@@ -245,10 +240,10 @@ export class WhatsAppChannel implements Channel {
     }
 
     this.stateUpdateDebounce = setTimeout(() => {
-      // Check current status before updating
-      const previousStatus = this.connectionStatus;
+      // Check current state before updating
+      const previousState = this.state;
       
-      if (previousStatus === ConnectionStatus.CONNECTED) {
+      if (previousState === ChannelState.CONNECTED) {
         return; // Already connected
       }
 
@@ -263,26 +258,25 @@ export class WhatsAppChannel implements Channel {
       }
 
       console.log("[WhatsApp] Connected successfully - device should appear in WhatsApp linked devices");
-      this.connectionStatus = ConnectionStatus.CONNECTED;
-      this.isRestarting = false;
+      this.state = ChannelState.CONNECTED;
       
       if (this.reconnectTimeout) {
         clearTimeout(this.reconnectTimeout);
         this.reconnectTimeout = null;
       }
 
-      // Always notify connection callback (status changed from non-connected to connected)
+      // Always notify connection callback (state changed from non-connected to connected)
       if (this.connectionStatusCallback) {
         this.connectionStatusCallback(true);
       }
-      this.lastConnectionState = this.connectionStatus;
+      this.lastState = this.state;
     }, 300); // 300ms debounce
   }
 
   private handleConnecting(): void {
-    if (this.connectionStatus !== ConnectionStatus.CONNECTING) {
+    if (this.state !== ChannelState.CONNECTING && this.state !== ChannelState.RESTARTING) {
       console.log("[WhatsApp] Connecting...");
-      this.connectionStatus = ConnectionStatus.CONNECTING;
+      this.state = ChannelState.CONNECTING;
     }
   }
 
@@ -294,10 +288,9 @@ export class WhatsAppChannel implements Channel {
     // We MUST create a new socket - the old one is useless
     if (statusCode === DisconnectReason.restartRequired) {
       console.log("[WhatsApp] Restart required after QR scan - creating new socket...");
-      this.isRestarting = true;
+      this.state = ChannelState.RESTARTING;
       // Don't update connection status callback during restart - it's temporary
-      // Keep the status as CONNECTING to prevent UI flicker
-      this.connectionStatus = ConnectionStatus.CONNECTING; // Show as connecting, not disconnected
+      // Keep the state as CONNECTING to prevent UI flicker
       // Don't notify disconnect during restart - it's temporary
       
       // Ensure credentials are saved before reconnecting
@@ -320,26 +313,31 @@ export class WhatsAppChannel implements Channel {
             
             // Wait a bit longer to ensure credentials are fully persisted
             // Check if still enabled before reconnecting
-            if (!this.isStopped && this.config.enabled) {
+            // State could have changed if stop() was called
+            // Use type assertion to prevent TypeScript from narrowing the type
+            const currentState = this.state as ChannelState;
+            if (currentState !== ChannelState.STOPPING && this.config.enabled) {
               this.reconnectTimeout = setTimeout(() => {
-                if (!this.isStopped && this.config.enabled) {
+                // State could have changed during timeout
+                const stateAtTimeout = this.state as ChannelState;
+                if (stateAtTimeout !== ChannelState.STOPPING && this.config.enabled) {
                   this.connect().catch((error) => {
                     console.error("[WhatsApp] Reconnection after restart failed:", error);
-                    this.isRestarting = false;
+                    this.state = ChannelState.IDLE;
                   });
                 } else {
                   console.log("[WhatsApp] Skipping reconnect - channel stopped or disabled");
-                  this.isRestarting = false;
+                  this.state = ChannelState.IDLE;
                 }
               }, 5000);
             } else {
               console.log("[WhatsApp] Skipping reconnect - channel stopped or disabled");
-              this.isRestarting = false;
+              this.state = ChannelState.IDLE;
             }
           })
           .catch((error) => {
             console.error("[WhatsApp] Failed to save credentials before restart:", error);
-            this.isRestarting = false;
+            this.state = ChannelState.IDLE;
           });
       } else {
         // No saveCreds function, just reconnect if still enabled
@@ -354,19 +352,24 @@ export class WhatsAppChannel implements Channel {
           }
           this.socket = null;
         }
-        if (!this.isStopped && this.config.enabled) {
+        // Check state - could have changed if stop() was called
+        // Use type assertion to prevent TypeScript from narrowing the type
+        const currentState = this.state as ChannelState;
+        if (currentState !== ChannelState.STOPPING && this.config.enabled) {
           this.reconnectTimeout = setTimeout(() => {
-            if (!this.isStopped && this.config.enabled) {
+            // State could have changed during timeout
+            const stateAtTimeout = this.state as ChannelState;
+            if (stateAtTimeout !== ChannelState.STOPPING && this.config.enabled) {
               this.connect().catch((error) => {
                 console.error("[WhatsApp] Reconnection failed:", error);
-                this.isRestarting = false;
+                this.state = ChannelState.IDLE;
               });
             } else {
-              this.isRestarting = false;
+              this.state = ChannelState.IDLE;
             }
           }, 5000);
         } else {
-          this.isRestarting = false;
+          this.state = ChannelState.IDLE;
         }
       }
       return;
@@ -376,9 +379,8 @@ export class WhatsAppChannel implements Channel {
     if (statusCode === DisconnectReason.connectionReplaced) {
       console.log("[WhatsApp] Connection replaced by another device - clearing credentials and stopping");
       this.clearQrCode();
-      this.connectionStatus = ConnectionStatus.DISCONNECTED;
+      this.state = ChannelState.STOPPING;
       this.clearCredentials();
-      this.isStopped = true; // Mark as stopped to prevent reconnection
       
       // Cancel any pending reconnection
       if (this.reconnectTimeout) {
@@ -390,7 +392,8 @@ export class WhatsAppChannel implements Channel {
       if (this.connectionStatusCallback) {
         this.connectionStatusCallback(false);
       }
-      this.lastConnectionState = this.connectionStatus;
+      this.lastState = this.state;
+      this.state = ChannelState.IDLE;
       return;
     }
 
@@ -398,9 +401,8 @@ export class WhatsAppChannel implements Channel {
     if (statusCode === DisconnectReason.loggedOut) {
       console.log("[WhatsApp] Logged out, please scan QR code again");
       this.clearQrCode();
-      this.connectionStatus = ConnectionStatus.DISCONNECTED;
+      this.state = ChannelState.STOPPING;
       this.clearCredentials();
-      this.isStopped = true; // Mark as stopped to prevent reconnection
       
       // Cancel any pending reconnection
       if (this.reconnectTimeout) {
@@ -408,20 +410,21 @@ export class WhatsAppChannel implements Channel {
         this.reconnectTimeout = null;
       }
       
-      // Only notify if status actually changed
-      if (this.lastConnectionState !== ConnectionStatus.DISCONNECTED && this.connectionStatusCallback) {
+      // Only notify if state actually changed
+      if (this.lastState !== ChannelState.IDLE && this.connectionStatusCallback) {
         this.connectionStatusCallback(false);
       }
-      this.lastConnectionState = this.connectionStatus;
+      this.lastState = this.state;
+      this.state = ChannelState.IDLE;
       return;
     }
 
     // Handle other disconnects - only reconnect if channel is still enabled and not stopped
     if (statusCode !== DisconnectReason.connectionClosed) {
-      // Don't reconnect if stopped or disabled
-      if (this.isStopped || !this.config.enabled) {
+      // Don't reconnect if stopping or disabled
+      if (this.state === ChannelState.STOPPING || !this.config.enabled) {
         console.log("[WhatsApp] Not reconnecting - channel stopped or disabled");
-        this.connectionStatus = ConnectionStatus.DISCONNECTED;
+        this.state = ChannelState.IDLE;
         if (this.connectionStatusCallback) {
           this.connectionStatusCallback(false);
         }
@@ -431,9 +434,9 @@ export class WhatsAppChannel implements Channel {
       const backoffDelay = 5000;
       console.log(`[WhatsApp] Connection closed (code: ${statusCode}), reconnecting in ${backoffDelay}ms...`);
       
-      // Don't immediately set to DISCONNECTED - show as CONNECTING during reconnect
-      const wasConnected = this.connectionStatus === ConnectionStatus.CONNECTED;
-      this.connectionStatus = ConnectionStatus.CONNECTING;
+      // Don't immediately set to IDLE - show as CONNECTING during reconnect
+      const wasConnected = this.state === ChannelState.CONNECTED;
+      this.state = ChannelState.CONNECTING;
       
       // Clean up old socket before reconnecting
       if (this.socket) {
@@ -460,26 +463,25 @@ export class WhatsAppChannel implements Channel {
       
       this.reconnectTimeout = setTimeout(() => {
         // Double-check before reconnecting
-        if (!this.isStopped && this.config.enabled) {
+        if (this.state !== ChannelState.STOPPING && this.config.enabled) {
           this.connect().catch((error) => {
             console.error("[WhatsApp] Reconnection failed:", error);
-            this.connectionStatus = ConnectionStatus.DISCONNECTED;
+            this.state = ChannelState.IDLE;
             if (this.connectionStatusCallback) {
               this.connectionStatusCallback(false);
             }
           });
         } else {
           console.log("[WhatsApp] Skipping reconnect - channel stopped or disabled");
-          this.connectionStatus = ConnectionStatus.DISCONNECTED;
+          this.state = ChannelState.IDLE;
         }
       }, backoffDelay);
     }
   }
 
   async stop(): Promise<void> {
-    // Mark as stopped to prevent any reconnection attempts
-    this.isStopped = true;
-    this.isRestarting = false;
+    // Transition to STOPPING state to prevent any reconnection attempts
+    this.state = ChannelState.STOPPING;
 
     // Cancel all timeouts
     if (this.reconnectTimeout) {
@@ -508,14 +510,14 @@ export class WhatsAppChannel implements Channel {
       this.socket = null;
     }
 
-    const previousStatus = this.connectionStatus;
-    this.connectionStatus = ConnectionStatus.DISCONNECTED;
+    const previousState = this.state;
+    this.state = ChannelState.IDLE;
     
-    // Only notify if status actually changed
-    if (previousStatus !== ConnectionStatus.DISCONNECTED && this.connectionStatusCallback) {
+    // Only notify if state actually changed (wasn't already idle)
+    if (previousState === ChannelState.STOPPING && this.connectionStatusCallback) {
       this.connectionStatusCallback(false);
     }
-    this.lastConnectionState = this.connectionStatus;
+    this.lastState = this.state;
   }
 
   private clearCredentials(): void {
@@ -625,6 +627,6 @@ export class WhatsAppChannel implements Channel {
   }
 
   isConnected(): boolean {
-    return this.connectionStatus === ConnectionStatus.CONNECTED && this.socket !== null;
+    return this.state === ChannelState.CONNECTED && this.socket !== null;
   }
 }

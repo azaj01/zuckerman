@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import type { GatewayClient } from "../../core/gateway/client";
-import { WhatsAppChannelService } from "../../core/channels/whatsapp-channel-service";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useGatewayContext } from "../../core/gateway/use-gateway-context";
 import type { WhatsAppConfig } from "../../core/channels/types";
 
 export interface UseWhatsAppChannelReturn {
@@ -24,9 +23,9 @@ export interface UseWhatsAppChannelReturn {
  * Hook for managing WhatsApp channel connection and configuration
  */
 export function useWhatsAppChannel(
-  gatewayClient: GatewayClient | null,
   options?: { enabled?: boolean }
 ): UseWhatsAppChannelReturn {
+  const { gatewayClient, whatsappService } = useGatewayContext();
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
@@ -37,28 +36,27 @@ export function useWhatsAppChannel(
   });
   const [savingConfig, setSavingConfig] = useState(false);
 
-  const serviceRef = useRef<WhatsAppChannelService | null>(null);
   const qrTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const service = whatsappService;
 
-  // Initialize service
-  const service = useMemo(() => {
-    if (!gatewayClient) return null;
-    if (!serviceRef.current) {
-      serviceRef.current = new WhatsAppChannelService(gatewayClient);
-    }
-    return serviceRef.current;
-  }, [gatewayClient]);
-
-  // Setup event listeners
+  // Setup event listeners (always register when service exists, not just when enabled)
   useEffect(() => {
-    if (!service || !options?.enabled) return;
+    if (!service) return;
 
     const handleQr = (qr: string | null) => {
+      console.log("[useWhatsAppChannel] handleQr called with:", qr ? `QR (length: ${qr.length})` : "null");
       if (qr) {
+        // Clear timeout when QR code is received
+        if (qrTimeoutRef.current) {
+          clearTimeout(qrTimeoutRef.current);
+          qrTimeoutRef.current = null;
+        }
+        console.log("[useWhatsAppChannel] Setting QR code in state");
         setQrCode(qr);
         setConnecting(false);
         setError(null);
       } else {
+        console.log("[useWhatsAppChannel] Clearing QR code");
         setQrCode(null);
       }
     };
@@ -66,6 +64,11 @@ export function useWhatsAppChannel(
     const handleConnected = (isConnected: boolean) => {
       setConnected(isConnected);
       if (isConnected) {
+        // Clear timeout when connected
+        if (qrTimeoutRef.current) {
+          clearTimeout(qrTimeoutRef.current);
+          qrTimeoutRef.current = null;
+        }
         setQrCode(null);
         setConnecting(false);
         setError(null);
@@ -77,20 +80,27 @@ export function useWhatsAppChannel(
     };
 
     const handleError = (err: string) => {
+      // Clear timeout on error
+      if (qrTimeoutRef.current) {
+        clearTimeout(qrTimeoutRef.current);
+        qrTimeoutRef.current = null;
+      }
       setError(err);
       setConnecting(false);
     };
 
+    console.log("[useWhatsAppChannel] Setting up event listeners on service");
     service.on("qr", handleQr);
     service.on("connected", handleConnected);
     service.on("error", handleError);
 
     return () => {
+      console.log("[useWhatsAppChannel] Cleaning up event listeners");
       service.off("qr");
       service.off("connected");
       service.off("error");
     };
-  }, [service, options?.enabled]);
+  }, [service]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -98,8 +108,7 @@ export function useWhatsAppChannel(
       if (qrTimeoutRef.current) {
         clearTimeout(qrTimeoutRef.current);
       }
-      serviceRef.current?.destroy();
-      serviceRef.current = null;
+      // Service is managed by GatewayProvider, no need to destroy here
     };
   }, []);
 
@@ -119,7 +128,7 @@ export function useWhatsAppChannel(
     if (options?.enabled && service && gatewayClient?.isConnected()) {
       loadConfig();
     }
-  }, [options?.enabled, service, gatewayClient?.isConnected(), loadConfig]);
+  }, [options?.enabled, service, gatewayClient, loadConfig]);
 
   // Connect
   const connect = useCallback(

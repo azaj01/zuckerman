@@ -19,9 +19,11 @@ export class GatewayEventHandlers {
         // Handle channel events (e.g., WhatsApp QR codes and connection status)
         if (event.event === "channel.whatsapp.qr" && event.payload) {
           const payload = event.payload as { qr: string | null; channelId: string; cleared?: boolean };
+          console.log("[GatewayEventHandlers] Dispatching whatsapp-qr event:", payload.qr ? "QR received" : "QR cleared");
           window.dispatchEvent(new CustomEvent("whatsapp-qr", { detail: payload }));
         } else if (event.event === "channel.whatsapp.connection" && event.payload) {
           const payload = event.payload as { connected: boolean; channelId: string };
+          console.log("[GatewayEventHandlers] Dispatching whatsapp-connection event:", payload.connected);
           window.dispatchEvent(new CustomEvent("whatsapp-connection", { detail: payload }));
         } else if (event.event === "channel.telegram.connection" && event.payload) {
           const payload = event.payload as { connected: boolean; channelId: string };

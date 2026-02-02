@@ -20,11 +20,18 @@ export class WhatsAppChannelService {
    */
   private setupEventListeners(): void {
     const handleQrEvent = (e: CustomEvent<{ qr: string | null; channelId: string; cleared?: boolean }>) => {
+      console.log("[WhatsAppChannelService] Received whatsapp-qr window event:", e.detail.qr ? "QR received" : "QR cleared");
       if (e.detail.channelId === "whatsapp") {
         if (e.detail.cleared || !e.detail.qr) {
+          console.log("[WhatsAppChannelService] Calling qr listener with null, listener exists:", !!this.eventListeners.qr);
           this.eventListeners.qr?.(null);
         } else {
-          this.eventListeners.qr?.(e.detail.qr);
+          console.log("[WhatsAppChannelService] Calling qr listener with QR code, listener exists:", !!this.eventListeners.qr);
+          if (this.eventListeners.qr) {
+            this.eventListeners.qr(e.detail.qr);
+          } else {
+            console.error("[WhatsAppChannelService] QR listener not registered!");
+          }
         }
       }
     };
@@ -54,7 +61,9 @@ export class WhatsAppChannelService {
     event: K,
     handler: { qr: (qr: string | null) => void; connected: (connected: boolean) => void; error: (error: string) => void }[K]
   ): void {
+    console.log(`[WhatsAppChannelService] Registering ${event} listener`);
     this.eventListeners[event] = handler;
+    console.log(`[WhatsAppChannelService] Registered listeners:`, Object.keys(this.eventListeners));
   }
 
   /**
@@ -152,6 +161,7 @@ export class WhatsAppChannelService {
 
   /**
    * Connect WhatsApp channel
+   * Uses channels.login endpoint (same as CLI) with JSON format
    */
   async connect(config?: Partial<WhatsAppConfig>): Promise<void> {
     if (!this.client.isConnected()) {
@@ -161,7 +171,7 @@ export class WhatsAppChannelService {
     // Load existing config or use provided/default
     const currentConfig = config ? { ...await this.loadConfig(), ...config } : await this.loadConfig();
 
-    // Enable WhatsApp in config
+    // Update config first (for dmPolicy and allowFrom)
     const configResponse = await this.client.request("config.update", {
       updates: {
         channels: {
@@ -180,41 +190,29 @@ export class WhatsAppChannelService {
       throw new Error(error);
     }
 
-    // Reload channels to pick up the new config
-    const reloadResponse = await this.client.request("channels.reload", {}) as {
+    // Use channels.login endpoint (same logic as CLI, always uses JSON mode)
+    const loginResponse = await this.client.request("channels.login", {
+      channelId: "whatsapp",
+      json: true, // Explicitly request JSON format (like CLI --json flag)
+    }) as {
       ok: boolean;
+      result?: { event: string; success?: boolean; message?: string };
       error?: { message: string };
     };
 
-    if (!reloadResponse.ok) {
-      const error = reloadResponse.error?.message || "Failed to reload channels";
+    if (!loginResponse.ok) {
+      const error = loginResponse.error?.message || "Failed to login WhatsApp";
       this.eventListeners.error?.(error);
       throw new Error(error);
     }
 
-    // Start WhatsApp channel
-    const startResponse = await this.client.request("channels.start", {
-      channelId: "whatsapp",
-    }) as { ok: boolean; error?: { message: string } };
-
-    if (!startResponse.ok) {
-      const error = startResponse.error?.message || "Failed to start WhatsApp";
-      this.eventListeners.error?.(error);
-      throw new Error(error);
+    // If already connected, notify immediately
+    if (loginResponse.result?.event === "connected" && loginResponse.result.success) {
+      this.eventListeners.connected?.(true);
+      return;
     }
 
-    // Check if already connected (credentials exist)
-    try {
-      const status = await this.getStatus();
-      if (status?.connected) {
-        this.eventListeners.connected?.(true);
-        return;
-      }
-    } catch {
-      // Continue with QR code flow if status check fails
-    }
-
-    // QR code will be emitted via event listener
+    // Otherwise, QR code will be emitted via event listener (channel.whatsapp.qr)
   }
 
   /**

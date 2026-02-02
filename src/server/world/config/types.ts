@@ -105,10 +105,6 @@ export interface IMessageConfig {
   groups?: Record<string, { requireMention?: boolean }>;
 }
 
-export interface WebChatConfig {
-  enabled?: boolean;
-}
-
 export interface ChannelsConfig {
   defaults?: ChannelDefaultsConfig;
   whatsapp?: WhatsAppConfig;
@@ -117,7 +113,6 @@ export interface ChannelsConfig {
   slack?: SlackConfig;
   signal?: SignalConfig;
   imessage?: IMessageConfig;
-  webchat?: WebChatConfig;
 }
 
 export interface LLMConfig {

@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { MemoryRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { useApp } from "./hooks/use-app";
+import { GatewayProvider } from "./core/gateway/gateway-provider";
 import { Sidebar } from "./components/layout/sidebar";
 import { TitleBar } from "./components/layout/title-bar";
 import { OnboardingFlow } from "./features/onboarding/onboarding-flow";
@@ -27,6 +28,20 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const showConnectionError = app.connectionStatus === "disconnected";
+
+  return (
+    <GatewayProvider gatewayClient={app.gatewayClient}>
+      <AppRoutes app={app} navigate={navigate} location={location} showConnectionError={showConnectionError} />
+    </GatewayProvider>
+  );
+}
+
+function AppRoutes({ app, navigate, location, showConnectionError }: {
+  app: ReturnType<typeof useApp>;
+  navigate: ReturnType<typeof useNavigate>;
+  location: ReturnType<typeof useLocation>;
+  showConnectionError: boolean;
+}) {
 
   // Redirect to agent page by default when agent is selected and on home page
   // But only if there's no current session (user hasn't explicitly selected a session)

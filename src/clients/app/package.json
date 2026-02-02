@@ -5,9 +5,10 @@
   "main": "dist/main/clients/app/src/main/index.js",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"pnpm run dev:vite\" \"pnpm run dev:electron\"",
+    "dev": "concurrently \"pnpm run dev:vite\" \"pnpm run dev:electron\" \"pnpm run dev:gateway\"",
     "dev:vite": "vite",
     "dev:electron": "wait-on http://localhost:3000 && pnpm run build:main && cross-env NODE_ENV=development electron dist/main/clients/app/src/main/index.js",
+    "dev:gateway": "cd ../.. && pnpm gateway:watch",
     "build": "pnpm run build:main && pnpm run build:renderer",
     "build:main": "tsc -p tsconfig.main.json && tsc-alias -p tsconfig.main.json && tsc -p tsconfig.preload.json && mv dist/main/preload.js dist/main/preload.cjs",
     "build:renderer": "vite build",
