@@ -1,19 +1,8 @@
-import React, { createContext, useMemo, useEffect, useRef, ReactNode } from "react";
+import React, { useMemo, useEffect, useRef, ReactNode } from "react";
 import type { GatewayClient } from "./client";
 import { gatewayService } from "./gateway-service";
-import { serviceRegistry, type ServiceRegistry } from "./service-registry";
-
-export interface GatewayContextValue {
-  gatewayClient: GatewayClient | null;
-  gatewayService: typeof gatewayService;
-  serviceRegistry: ServiceRegistry;
-}
-
-export const GatewayContext = createContext<GatewayContextValue>({
-  gatewayClient: null,
-  gatewayService: gatewayService,
-  serviceRegistry: serviceRegistry,
-});
+import { serviceRegistry } from "./service-registry";
+import { GatewayContext } from "./gateway-context";
 
 interface GatewayProviderProps {
   gatewayClient: GatewayClient | null;

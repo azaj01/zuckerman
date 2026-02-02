@@ -2,34 +2,55 @@ import { Bot, Context } from "grammy";
 import type { Channel, ChannelMessage } from "./types.js";
 import type { TelegramConfig } from "@server/world/config/types.js";
 
+enum ChannelState {
+  IDLE = "idle",
+  CONNECTING = "connecting",
+  CONNECTED = "connected",
+  STOPPING = "stopping",
+}
+
 export class TelegramChannel implements Channel {
   id: string = "telegram";
   type = "telegram" as const;
   private bot: Bot | null = null;
   private config: TelegramConfig;
   private messageHandlers: Array<(message: ChannelMessage) => void> = [];
-  private isRunning = false;
-  private connectionCallback?: (connected: boolean) => void;
+  private state: ChannelState = ChannelState.IDLE;
+  private statusCallback?: (status: {
+    status: "connected" | "connecting" | "disconnected";
+  }) => void;
 
-  constructor(config: TelegramConfig, connectionCallback?: (connected: boolean) => void) {
+  constructor(config: TelegramConfig, statusCallback?: (status: {
+    status: "connected" | "connecting" | "disconnected";
+  }) => void) {
     this.config = config;
-    this.connectionCallback = connectionCallback;
+    this.statusCallback = statusCallback;
   }
 
   async start(): Promise<void> {
-    if (this.isRunning) {
+    if (this.state === ChannelState.CONNECTED) {
       return;
     }
 
     if (!this.config.enabled) {
       console.log("[Telegram] Channel is disabled in config");
+      this.state = ChannelState.IDLE;
       return;
     }
 
     if (!this.config.botToken) {
       console.error("[Telegram] Bot token is required");
+      this.state = ChannelState.IDLE;
       return;
     }
+
+    // Don't start if stopping
+    if (this.state === ChannelState.STOPPING) {
+      return;
+    }
+
+    this.state = ChannelState.CONNECTING;
+    this.notifyStatus("connecting");
 
     try {
       this.bot = new Bot(this.config.botToken);
@@ -43,10 +64,8 @@ export class TelegramChannel implements Channel {
             (verifyError?.description && verifyError.description.includes("terminated by other getUpdates request"))) {
           console.error("[Telegram] Cannot start: Another bot instance is already running with this token. Only one instance can run at a time. Please stop the other instance first.");
           this.bot = null;
-          this.isRunning = false;
-          if (this.connectionCallback) {
-            this.connectionCallback(false);
-          }
+          this.state = ChannelState.IDLE;
+          this.notifyStatus("disconnected");
           return;
         }
         // For other errors (like invalid token), throw
@@ -72,46 +91,41 @@ export class TelegramChannel implements Channel {
       // So we start it without awaiting and mark as running immediately
       this.bot.start().catch((err) => {
         console.error("[Telegram] Bot start error:", err);
-        this.isRunning = false;
-        if (this.connectionCallback) {
-          this.connectionCallback(false);
-        }
+        this.state = ChannelState.IDLE;
+        this.notifyStatus("disconnected");
       });
       
-      // Mark as running immediately after starting (bot.start() doesn't resolve)
-      this.isRunning = true;
+      // Mark as connected immediately after starting (bot.start() doesn't resolve)
+      this.state = ChannelState.CONNECTED;
       console.log("[Telegram] Bot started successfully");
-      
-      // Broadcast connection status
-      if (this.connectionCallback) {
-        this.connectionCallback(true);
-      }
+      this.notifyStatus("connected");
     } catch (error: any) {
       console.error("[Telegram] Failed to start:", error);
       this.bot = null;
-      this.isRunning = false;
-      // Broadcast disconnected status
-      if (this.connectionCallback) {
-        this.connectionCallback(false);
-      }
+      this.state = ChannelState.IDLE;
+      this.notifyStatus("disconnected");
       throw error;
     }
   }
 
   async stop(): Promise<void> {
+    if (this.state === ChannelState.STOPPING || this.state === ChannelState.IDLE) {
+      return;
+    }
+
+    this.state = ChannelState.STOPPING;
+
     if (this.bot) {
       await this.bot.stop();
       this.bot = null;
     }
-    this.isRunning = false;
-    // Broadcast disconnected status
-    if (this.connectionCallback) {
-      this.connectionCallback(false);
-    }
+
+    this.state = ChannelState.IDLE;
+    this.notifyStatus("disconnected");
   }
 
   async send(message: string, to: string): Promise<void> {
-    if (!this.bot || !this.isRunning) {
+    if (this.state !== ChannelState.CONNECTED || !this.bot) {
       throw new Error("Telegram channel is not connected");
     }
 
@@ -205,6 +219,12 @@ export class TelegramChannel implements Channel {
   }
 
   isConnected(): boolean {
-    return this.isRunning && this.bot !== null;
+    return this.state === ChannelState.CONNECTED && this.bot !== null;
+  }
+
+  private notifyStatus(status: "connected" | "connecting" | "disconnected"): void {
+    if (this.statusCallback) {
+      this.statusCallback({ status });
+    }
   }
 }

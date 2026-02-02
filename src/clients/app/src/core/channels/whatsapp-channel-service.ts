@@ -52,9 +52,7 @@ export class WhatsAppChannelService {
     event: K,
     handler: { status: (status: { status: "connected" | "connecting" | "disconnected" | "waiting_for_scan"; qr?: string | null }) => void; error: (error: string) => void }[K]
   ): void {
-    console.log(`[WhatsAppChannelService] Registering ${event} listener`);
     this.eventListeners[event] = handler;
-    console.log(`[WhatsAppChannelService] Registered listeners:`, Object.keys(this.eventListeners));
   }
 
   /**

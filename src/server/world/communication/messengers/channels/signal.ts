@@ -1,6 +1,13 @@
 import type { Channel, ChannelMessage } from "./types.js";
 import type { SignalConfig } from "@server/world/config/types.js";
 
+enum ChannelState {
+  IDLE = "idle",
+  CONNECTING = "connecting",
+  CONNECTED = "connected",
+  STOPPING = "stopping",
+}
+
 /**
  * Signal Channel Implementation
  * 
@@ -13,45 +20,58 @@ export class SignalChannel implements Channel {
   type = "signal" as const;
   private config: SignalConfig;
   private messageHandlers: Array<(message: ChannelMessage) => void> = [];
-  private isRunning = false;
-  private connectionCallback?: (connected: boolean) => void;
+  private state: ChannelState = ChannelState.IDLE;
+  private statusCallback?: (status: {
+    status: "connected" | "connecting" | "disconnected";
+  }) => void;
 
-  constructor(config: SignalConfig, connectionCallback?: (connected: boolean) => void) {
+  constructor(config: SignalConfig, statusCallback?: (status: {
+    status: "connected" | "connecting" | "disconnected";
+  }) => void) {
     this.config = config;
-    this.connectionCallback = connectionCallback;
+    this.statusCallback = statusCallback;
   }
 
   async start(): Promise<void> {
-    if (this.isRunning) {
+    if (this.state === ChannelState.CONNECTED) {
       return;
     }
 
     if (!this.config.enabled) {
       console.log("[Signal] Channel is disabled in config");
+      this.state = ChannelState.IDLE;
       return;
     }
+
+    // Don't start if stopping
+    if (this.state === ChannelState.STOPPING) {
+      return;
+    }
+
+    this.state = ChannelState.CONNECTING;
+    this.notifyStatus("connecting");
 
     // Signal integration requires signal-cli or similar
     // This is a placeholder implementation
     console.log("[Signal] Signal channel requires signal-cli setup. Please configure signal-cli separately.");
     
-    // For now, mark as running if enabled (actual implementation would connect to signal-cli)
-    this.isRunning = true;
-    
-    if (this.connectionCallback) {
-      this.connectionCallback(true);
-    }
+    // For now, mark as connected if enabled (actual implementation would connect to signal-cli)
+    this.state = ChannelState.CONNECTED;
+    this.notifyStatus("connected");
   }
 
   async stop(): Promise<void> {
-    this.isRunning = false;
-    if (this.connectionCallback) {
-      this.connectionCallback(false);
+    if (this.state === ChannelState.STOPPING || this.state === ChannelState.IDLE) {
+      return;
     }
+
+    this.state = ChannelState.STOPPING;
+    this.state = ChannelState.IDLE;
+    this.notifyStatus("disconnected");
   }
 
   async send(message: string, to: string): Promise<void> {
-    if (!this.isRunning) {
+    if (this.state !== ChannelState.CONNECTED) {
       throw new Error("Signal channel is not connected");
     }
 
@@ -65,6 +85,12 @@ export class SignalChannel implements Channel {
   }
 
   isConnected(): boolean {
-    return this.isRunning;
+    return this.state === ChannelState.CONNECTED;
+  }
+
+  private notifyStatus(status: "connected" | "connecting" | "disconnected"): void {
+    if (this.statusCallback) {
+      this.statusCallback({ status });
+    }
   }
 }

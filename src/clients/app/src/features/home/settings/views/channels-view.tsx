@@ -195,24 +195,30 @@ export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
       });
     };
 
-    const handleConnectionEvent = (e: CustomEvent<{ connected: boolean; channelId: string }>) => {
+    const handleStatusEvent = (e: CustomEvent<{
+      status: "connected" | "connecting" | "disconnected" | "waiting_for_scan";
+      qr?: string | null;
+      channelId: string;
+    }>) => {
       const channelId = e.detail.channelId;
+      const { status, qr } = e.detail;
       const now = Date.now();
       
       // Cache state to prevent rapid toggles
       const cached = stateCacheRef.current[channelId];
-      if (cached && cached.connected === e.detail.connected && (now - cached.timestamp) < 500) {
-        console.log("[ChannelsView] Ignoring duplicate connection event");
+      const isConnected = status === "connected";
+      if (cached && cached.connected === isConnected && (now - cached.timestamp) < 500) {
+        console.log("[ChannelsView] Ignoring duplicate status event");
         return;
       }
       
       stateCacheRef.current[channelId] = {
-        connected: e.detail.connected,
+        connected: isConnected,
         timestamp: now,
       };
 
       // Sync UI state from backend event (single source of truth)
-      if (e.detail.connected) {
+      if (status === "connected") {
         updateChannelState(channelId, {
           qrCode: null, // Always clear QR on connection
           connecting: false,
@@ -221,7 +227,18 @@ export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
         clearChannelTimers(channelId);
         // Reload status from backend to ensure sync
         loadChannelStatus();
-      } else {
+      } else if (status === "connecting") {
+        updateChannelState(channelId, {
+          connecting: true,
+          error: null,
+        });
+      } else if (status === "waiting_for_scan") {
+        updateChannelState(channelId, {
+          qrCode: qr || null,
+          connecting: false,
+          error: null,
+        });
+      } else if (status === "disconnected") {
         // On disconnect, clear QR and update state
         updateChannelState(channelId, {
           qrCode: null,
@@ -232,18 +249,16 @@ export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
       }
     };
 
-    window.addEventListener("whatsapp-qr", handleQrEvent as EventListener);
-    window.addEventListener("whatsapp-connection", handleConnectionEvent as EventListener);
-    window.addEventListener("telegram-connection", handleConnectionEvent as EventListener);
-    window.addEventListener("discord-connection", handleConnectionEvent as EventListener);
-    window.addEventListener("signal-connection", handleConnectionEvent as EventListener);
+    window.addEventListener("whatsapp-status", handleStatusEvent as EventListener);
+    window.addEventListener("telegram-status", handleStatusEvent as EventListener);
+    window.addEventListener("discord-status", handleStatusEvent as EventListener);
+    window.addEventListener("signal-status", handleStatusEvent as EventListener);
 
     return () => {
-      window.removeEventListener("whatsapp-qr", handleQrEvent as EventListener);
-      window.removeEventListener("whatsapp-connection", handleConnectionEvent as EventListener);
-      window.removeEventListener("telegram-connection", handleConnectionEvent as EventListener);
-      window.removeEventListener("discord-connection", handleConnectionEvent as EventListener);
-      window.removeEventListener("signal-connection", handleConnectionEvent as EventListener);
+      window.removeEventListener("whatsapp-status", handleStatusEvent as EventListener);
+      window.removeEventListener("telegram-status", handleStatusEvent as EventListener);
+      window.removeEventListener("discord-status", handleStatusEvent as EventListener);
+      window.removeEventListener("signal-status", handleStatusEvent as EventListener);
       Object.keys(qrTimeoutRefs.current).forEach(clearChannelTimers);
       Object.keys(connectionPollIntervals.current).forEach(clearChannelTimers);
     };

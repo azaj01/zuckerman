@@ -192,13 +192,13 @@ export async function initializeChannels(
   if (config.channels?.telegram?.enabled) {
     const telegramChannel = new TelegramChannel(
       config.channels.telegram,
-      (connected) => {
-        // Broadcast connection status to all connected gateway clients
+      (status) => {
+        // Broadcast status to all connected gateway clients
         if (broadcastEvent) {
           broadcastEvent({
             type: "event",
-            event: "channel.telegram.connection",
-            payload: { connected, channelId: "telegram", ts: Date.now() },
+            event: "channel.telegram.status",
+            payload: { ...status, channelId: "telegram", ts: Date.now() },
           });
         }
       },
@@ -219,13 +219,13 @@ export async function initializeChannels(
   if (config.channels?.discord?.enabled) {
     const discordChannel = new DiscordChannel(
       config.channels.discord,
-      (connected) => {
-        // Broadcast connection status to all connected gateway clients
+      (status) => {
+        // Broadcast status to all connected gateway clients
         if (broadcastEvent) {
           broadcastEvent({
             type: "event",
-            event: "channel.discord.connection",
-            payload: { connected, channelId: "discord", ts: Date.now() },
+            event: "channel.discord.status",
+            payload: { ...status, channelId: "discord", ts: Date.now() },
           });
         }
       },
@@ -244,13 +244,13 @@ export async function initializeChannels(
   if (config.channels?.signal?.enabled) {
     const signalChannel = new SignalChannel(
       config.channels.signal,
-      (connected) => {
-        // Broadcast connection status to all connected gateway clients
+      (status) => {
+        // Broadcast status to all connected gateway clients
         if (broadcastEvent) {
           broadcastEvent({
             type: "event",
-            event: "channel.signal.connection",
-            payload: { connected, channelId: "signal", ts: Date.now() },
+            event: "channel.signal.status",
+            payload: { ...status, channelId: "signal", ts: Date.now() },
           });
         }
       },

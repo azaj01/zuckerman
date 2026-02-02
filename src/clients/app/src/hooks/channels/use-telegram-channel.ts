@@ -47,15 +47,25 @@ export function useTelegramChannel(
   useEffect(() => {
     if (!service || !options?.enabled) return;
 
-    const handleConnected = (isConnected: boolean) => {
-      setConnected(isConnected);
-      if (isConnected) {
+    const handleStatus = (statusObj: {
+      status: "connected" | "connecting" | "disconnected";
+    }) => {
+      const { status } = statusObj;
+      if (status === "connected") {
+        setConnected(true);
         setConnecting(false);
         setError(null);
         // Load config after connection
         setTimeout(() => {
           loadConfig();
         }, 500);
+      } else if (status === "connecting") {
+        setConnecting(true);
+        setConnected(false);
+        setError(null);
+      } else if (status === "disconnected") {
+        setConnected(false);
+        setConnecting(false);
       }
     };
 
@@ -64,11 +74,11 @@ export function useTelegramChannel(
       setConnecting(false);
     };
 
-    service.on("connected", handleConnected);
+    service.on("status", handleStatus);
     service.on("error", handleError);
 
     return () => {
-      service.off("connected");
+      service.off("status");
       service.off("error");
     };
   }, [service, options?.enabled]);

@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { GatewayContext, type GatewayContextValue } from "./gateway-provider";
+import { GatewayContext, type GatewayContextValue } from "./gateway-context";
 
 /**
  * Hook to access gateway context

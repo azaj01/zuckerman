@@ -25,15 +25,27 @@ export class GatewayEventHandlers {
           };
           console.log("[GatewayEventHandlers] Dispatching whatsapp-status event:", payload.status, payload.qr ? "with QR" : "no QR");
           window.dispatchEvent(new CustomEvent("whatsapp-status", { detail: payload }));
-        } else if (event.event === "channel.telegram.connection" && event.payload) {
-          const payload = event.payload as { connected: boolean; channelId: string };
-          window.dispatchEvent(new CustomEvent("telegram-connection", { detail: payload }));
-        } else if (event.event === "channel.discord.connection" && event.payload) {
-          const payload = event.payload as { connected: boolean; channelId: string };
-          window.dispatchEvent(new CustomEvent("discord-connection", { detail: payload }));
-        } else if (event.event === "channel.signal.connection" && event.payload) {
-          const payload = event.payload as { connected: boolean; channelId: string };
-          window.dispatchEvent(new CustomEvent("signal-connection", { detail: payload }));
+        } else if (event.event === "channel.telegram.status" && event.payload) {
+          const payload = event.payload as {
+            status: "connected" | "connecting" | "disconnected";
+            channelId: string;
+          };
+          console.log("[GatewayEventHandlers] Dispatching telegram-status event:", payload.status);
+          window.dispatchEvent(new CustomEvent("telegram-status", { detail: payload }));
+        } else if (event.event === "channel.discord.status" && event.payload) {
+          const payload = event.payload as {
+            status: "connected" | "connecting" | "disconnected";
+            channelId: string;
+          };
+          console.log("[GatewayEventHandlers] Dispatching discord-status event:", payload.status);
+          window.dispatchEvent(new CustomEvent("discord-status", { detail: payload }));
+        } else if (event.event === "channel.signal.status" && event.payload) {
+          const payload = event.payload as {
+            status: "connected" | "connecting" | "disconnected";
+            channelId: string;
+          };
+          console.log("[GatewayEventHandlers] Dispatching signal-status event:", payload.status);
+          window.dispatchEvent(new CustomEvent("signal-status", { detail: payload }));
         }
       },
     };

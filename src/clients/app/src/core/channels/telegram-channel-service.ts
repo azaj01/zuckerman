@@ -6,18 +6,45 @@ import type { TelegramConfig, ChannelConnectionState, ChannelStatus } from "./ty
  */
 export class TelegramChannelService {
   private eventListeners: {
-    connected?: (connected: boolean) => void;
+    status?: (status: { status: "connected" | "connecting" | "disconnected" }) => void;
     error?: (error: string) => void;
   } = {};
 
-  constructor(private client: GatewayClient) {}
+  constructor(private client: GatewayClient) {
+    this.setupEventListeners();
+  }
+
+  /**
+   * Setup event listeners for Telegram-specific events
+   */
+  private setupEventListeners(): void {
+    const handleStatusEvent = (e: CustomEvent<{
+      status: "connected" | "connecting" | "disconnected";
+      channelId: string;
+    }>) => {
+      if (e.detail.channelId === "telegram") {
+        this.eventListeners.status?.({
+          status: e.detail.status,
+        });
+      }
+    };
+
+    window.addEventListener("telegram-status", handleStatusEvent as EventListener);
+
+    // Store cleanup function
+    this.cleanup = () => {
+      window.removeEventListener("telegram-status", handleStatusEvent as EventListener);
+    };
+  }
+
+  private cleanup?: () => void;
 
   /**
    * Register event listeners
    */
-  on<K extends keyof { connected: (connected: boolean) => void; error: (error: string) => void }>(
+  on<K extends keyof { status: (status: { status: "connected" | "connecting" | "disconnected" }) => void; error: (error: string) => void }>(
     event: K,
-    handler: { connected: (connected: boolean) => void; error: (error: string) => void }[K]
+    handler: { status: (status: { status: "connected" | "connecting" | "disconnected" }) => void; error: (error: string) => void }[K]
   ): void {
     this.eventListeners[event] = handler;
   }
@@ -33,6 +60,7 @@ export class TelegramChannelService {
    * Cleanup all listeners
    */
   destroy(): void {
+    this.cleanup?.();
     this.eventListeners = {};
   }
 
@@ -165,7 +193,7 @@ export class TelegramChannelService {
       try {
         const status = await this.getStatus();
         if (status?.connected) {
-          this.eventListeners.connected?.(true);
+          this.eventListeners.status?.({ status: "connected" });
           return;
         }
 
@@ -187,7 +215,7 @@ export class TelegramChannelService {
     // Initial check
     const status = await this.getStatus();
     if (status?.connected) {
-      this.eventListeners.connected?.(true);
+      this.eventListeners.status?.({ status: "connected" });
       return;
     }
 
@@ -207,6 +235,6 @@ export class TelegramChannelService {
       throw new Error(stopResponse.error?.message || "Failed to stop Telegram");
     }
 
-    this.eventListeners.connected?.(false);
+    this.eventListeners.status?.({ status: "disconnected" });
   }
 }

@@ -99,12 +99,10 @@ export function useWhatsAppChannel(
       setConnecting(false);
     };
 
-    console.log("[useWhatsAppChannel] Setting up event listeners on service");
     service.on("status", handleStatus);
     service.on("error", handleError);
 
     return () => {
-      console.log("[useWhatsAppChannel] Cleaning up event listeners");
       service.off("status");
       service.off("error");
     };

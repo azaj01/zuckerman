@@ -8,18 +8,45 @@ import type { SignalConfig, ChannelConnectionState, ChannelStatus } from "./type
  */
 export class SignalChannelService {
   private eventListeners: {
-    connected?: (connected: boolean) => void;
+    status?: (status: { status: "connected" | "connecting" | "disconnected" }) => void;
     error?: (error: string) => void;
   } = {};
 
-  constructor(private client: GatewayClient) {}
+  constructor(private client: GatewayClient) {
+    this.setupEventListeners();
+  }
+
+  /**
+   * Setup event listeners for Signal-specific events
+   */
+  private setupEventListeners(): void {
+    const handleStatusEvent = (e: CustomEvent<{
+      status: "connected" | "connecting" | "disconnected";
+      channelId: string;
+    }>) => {
+      if (e.detail.channelId === "signal") {
+        this.eventListeners.status?.({
+          status: e.detail.status,
+        });
+      }
+    };
+
+    window.addEventListener("signal-status", handleStatusEvent as EventListener);
+
+    // Store cleanup function
+    this.cleanup = () => {
+      window.removeEventListener("signal-status", handleStatusEvent as EventListener);
+    };
+  }
+
+  private cleanup?: () => void;
 
   /**
    * Register event listeners
    */
-  on<K extends keyof { connected: (connected: boolean) => void; error: (error: string) => void }>(
+  on<K extends keyof { status: (status: { status: "connected" | "connecting" | "disconnected" }) => void; error: (error: string) => void }>(
     event: K,
-    handler: { connected: (connected: boolean) => void; error: (error: string) => void }[K]
+    handler: { status: (status: { status: "connected" | "connecting" | "disconnected" }) => void; error: (error: string) => void }[K]
   ): void {
     this.eventListeners[event] = handler;
   }
@@ -35,6 +62,7 @@ export class SignalChannelService {
    * Cleanup all listeners
    */
   destroy(): void {
+    this.cleanup?.();
     this.eventListeners = {};
   }
 
@@ -160,7 +188,7 @@ export class SignalChannelService {
       try {
         const status = await this.getStatus();
         if (status?.connected) {
-          this.eventListeners.connected?.(true);
+          this.eventListeners.status?.({ status: "connected" });
           return;
         }
 
@@ -182,7 +210,7 @@ export class SignalChannelService {
     // Initial check
     const status = await this.getStatus();
     if (status?.connected) {
-      this.eventListeners.connected?.(true);
+      this.eventListeners.status?.({ status: "connected" });
       return;
     }
 
@@ -202,6 +230,6 @@ export class SignalChannelService {
       throw new Error(stopResponse.error?.message || "Failed to stop Signal");
     }
 
-    this.eventListeners.connected?.(false);
+    this.eventListeners.status?.({ status: "disconnected" });
   }
 }

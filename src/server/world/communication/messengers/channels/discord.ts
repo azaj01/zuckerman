@@ -2,34 +2,55 @@ import { Client, GatewayIntentBits, Events, Message, TextChannel, DMChannel } fr
 import type { Channel, ChannelMessage } from "./types.js";
 import type { DiscordConfig } from "@server/world/config/types.js";
 
+enum ChannelState {
+  IDLE = "idle",
+  CONNECTING = "connecting",
+  CONNECTED = "connected",
+  STOPPING = "stopping",
+}
+
 export class DiscordChannel implements Channel {
   id: string = "discord";
   type = "discord" as const;
   private client: Client | null = null;
   private config: DiscordConfig;
   private messageHandlers: Array<(message: ChannelMessage) => void> = [];
-  private isRunning = false;
-  private connectionCallback?: (connected: boolean) => void;
+  private state: ChannelState = ChannelState.IDLE;
+  private statusCallback?: (status: {
+    status: "connected" | "connecting" | "disconnected";
+  }) => void;
 
-  constructor(config: DiscordConfig, connectionCallback?: (connected: boolean) => void) {
+  constructor(config: DiscordConfig, statusCallback?: (status: {
+    status: "connected" | "connecting" | "disconnected";
+  }) => void) {
     this.config = config;
-    this.connectionCallback = connectionCallback;
+    this.statusCallback = statusCallback;
   }
 
   async start(): Promise<void> {
-    if (this.isRunning) {
+    if (this.state === ChannelState.CONNECTED) {
       return;
     }
 
     if (!this.config.enabled) {
       console.log("[Discord] Channel is disabled in config");
+      this.state = ChannelState.IDLE;
       return;
     }
 
     if (!this.config.token) {
       console.error("[Discord] Bot token is required");
+      this.state = ChannelState.IDLE;
       return;
     }
+
+    // Don't start if stopping
+    if (this.state === ChannelState.STOPPING) {
+      return;
+    }
+
+    this.state = ChannelState.CONNECTING;
+    this.notifyStatus("connecting");
 
     try {
       this.client = new Client({
@@ -44,11 +65,8 @@ export class DiscordChannel implements Channel {
       // Handle ready event
       this.client.once(Events.ClientReady, () => {
         console.log(`[Discord] Bot logged in as ${this.client!.user!.tag}`);
-        this.isRunning = true;
-        // Broadcast connection status
-        if (this.connectionCallback) {
-          this.connectionCallback(true);
-        }
+        this.state = ChannelState.CONNECTED;
+        this.notifyStatus("connected");
       });
 
       // Handle incoming messages
@@ -60,29 +78,30 @@ export class DiscordChannel implements Channel {
       await this.client.login(this.config.token);
     } catch (error) {
       console.error("[Discord] Failed to start:", error);
-      this.isRunning = false;
-      // Broadcast disconnected status
-      if (this.connectionCallback) {
-        this.connectionCallback(false);
-      }
+      this.state = ChannelState.IDLE;
+      this.notifyStatus("disconnected");
       throw error;
     }
   }
 
   async stop(): Promise<void> {
+    if (this.state === ChannelState.STOPPING || this.state === ChannelState.IDLE) {
+      return;
+    }
+
+    this.state = ChannelState.STOPPING;
+
     if (this.client) {
       await this.client.destroy();
       this.client = null;
     }
-    this.isRunning = false;
-    // Broadcast disconnected status
-    if (this.connectionCallback) {
-      this.connectionCallback(false);
-    }
+
+    this.state = ChannelState.IDLE;
+    this.notifyStatus("disconnected");
   }
 
   async send(message: string, to: string): Promise<void> {
-    if (!this.client || !this.isRunning) {
+    if (this.state !== ChannelState.CONNECTED || !this.client) {
       throw new Error("Discord channel is not connected");
     }
 
@@ -190,6 +209,12 @@ export class DiscordChannel implements Channel {
   }
 
   isConnected(): boolean {
-    return this.isRunning && this.client !== null;
+    return this.state === ChannelState.CONNECTED && this.client !== null;
+  }
+
+  private notifyStatus(status: "connected" | "connecting" | "disconnected"): void {
+    if (this.statusCallback) {
+      this.statusCallback({ status });
+    }
   }
 }

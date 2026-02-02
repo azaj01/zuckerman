@@ -6,18 +6,45 @@ import type { DiscordConfig, ChannelConnectionState, ChannelStatus } from "./typ
  */
 export class DiscordChannelService {
   private eventListeners: {
-    connected?: (connected: boolean) => void;
+    status?: (status: { status: "connected" | "connecting" | "disconnected" }) => void;
     error?: (error: string) => void;
   } = {};
 
-  constructor(private client: GatewayClient) {}
+  constructor(private client: GatewayClient) {
+    this.setupEventListeners();
+  }
+
+  /**
+   * Setup event listeners for Discord-specific events
+   */
+  private setupEventListeners(): void {
+    const handleStatusEvent = (e: CustomEvent<{
+      status: "connected" | "connecting" | "disconnected";
+      channelId: string;
+    }>) => {
+      if (e.detail.channelId === "discord") {
+        this.eventListeners.status?.({
+          status: e.detail.status,
+        });
+      }
+    };
+
+    window.addEventListener("discord-status", handleStatusEvent as EventListener);
+
+    // Store cleanup function
+    this.cleanup = () => {
+      window.removeEventListener("discord-status", handleStatusEvent as EventListener);
+    };
+  }
+
+  private cleanup?: () => void;
 
   /**
    * Register event listeners
    */
-  on<K extends keyof { connected: (connected: boolean) => void; error: (error: string) => void }>(
+  on<K extends keyof { status: (status: { status: "connected" | "connecting" | "disconnected" }) => void; error: (error: string) => void }>(
     event: K,
-    handler: { connected: (connected: boolean) => void; error: (error: string) => void }[K]
+    handler: { status: (status: { status: "connected" | "connecting" | "disconnected" }) => void; error: (error: string) => void }[K]
   ): void {
     this.eventListeners[event] = handler;
   }
@@ -33,6 +60,7 @@ export class DiscordChannelService {
    * Cleanup all listeners
    */
   destroy(): void {
+    this.cleanup?.();
     this.eventListeners = {};
   }
 
@@ -176,7 +204,7 @@ export class DiscordChannelService {
       try {
         const status = await this.getStatus();
         if (status?.connected) {
-          this.eventListeners.connected?.(true);
+          this.eventListeners.status?.({ status: "connected" });
           return;
         }
 
@@ -198,7 +226,7 @@ export class DiscordChannelService {
     // Initial check
     const status = await this.getStatus();
     if (status?.connected) {
-      this.eventListeners.connected?.(true);
+      this.eventListeners.status?.({ status: "connected" });
       return;
     }
 
@@ -218,6 +246,6 @@ export class DiscordChannelService {
       throw new Error(stopResponse.error?.message || "Failed to stop Discord");
     }
 
-    this.eventListeners.connected?.(false);
+    this.eventListeners.status?.({ status: "disconnected" });
   }
 }
