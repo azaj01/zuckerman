@@ -2,7 +2,8 @@ import React, { useEffect } from "react";
 import { MemoryRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { useApp } from "./hooks/use-app";
 import { GatewayProvider } from "./core/gateway/gateway-provider";
-import { Sidebar } from "./components/layout/sidebar";
+import { AppSidebar } from "./components/layout/sidebar";
+import { SidebarProvider, SidebarInset } from "./components/ui/sidebar";
 import { TitleBar } from "./components/layout/title-bar";
 import { OnboardingFlow } from "./features/onboarding/onboarding-flow";
 import { ConnectionError } from "./features/gateway/connection-error";
@@ -91,13 +92,13 @@ function AppRoutes({ app, navigate, location, showConnectionError }: {
       {showConnectionError ? (
         <ConnectionError onRetry={app.handleRetryConnection} />
       ) : (
-        <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>
-          <Sidebar
+        <SidebarProvider>
+          <AppSidebar
             state={app}
             activeConversationIds={app.activeConversationIds}
             onAction={app.handleSidebarAction}
           />
-          <div className="flex flex-col flex-1 overflow-hidden" style={{ minWidth: 0, minHeight: 0 }}>
+          <SidebarInset className="flex flex-col overflow-hidden" style={{ minWidth: 0, minHeight: 0 }}>
             <Routes>
               <Route
                 path="/"
@@ -140,8 +141,8 @@ function AppRoutes({ app, navigate, location, showConnectionError }: {
                 } 
               />
             </Routes>
-          </div>
-        </div>
+          </SidebarInset>
+        </SidebarProvider>
       )}
     </div>
   );
