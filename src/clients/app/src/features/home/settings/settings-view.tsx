@@ -349,17 +349,17 @@ export function SettingsView({
             <DialogTitle>Reset All Data</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete all Zuckerman data? This action cannot be undone.
-              <br />
-              <br />
-              This will permanently delete:
-              <ul className="list-disc list-inside mt-2 space-y-1">
-                <li>All chat history and sessions</li>
-                <li>Agent configurations</li>
-                <li>Memory and transcripts</li>
-                <li>All other stored data</li>
-              </ul>
             </DialogDescription>
           </DialogHeader>
+          <div className="text-sm text-muted-foreground">
+            <p className="mb-2">This will permanently delete:</p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>All chat history and sessions</li>
+              <li>Agent configurations</li>
+              <li>Memory and transcripts</li>
+              <li>All other stored data</li>
+            </ul>
+          </div>
           <DialogFooter>
             <Button
               variant="outline"

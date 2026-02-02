@@ -18,11 +18,127 @@ export function createChannelsCommand(): Command {
 
       if (channel === "whatsapp") {
         await loginWhatsApp();
+      } else if (channel === "discord") {
+        await loginDiscord();
+      } else if (channel === "signal") {
+        await loginSignal();
       } else {
         console.error(`Channel "${channel}" is not yet supported`);
         process.exit(1);
       }
     });
+
+  // WhatsApp security subcommands
+  const whatsappCmd = new Command("whatsapp")
+    .description("Manage WhatsApp security settings");
+
+  whatsappCmd
+    .command("policy")
+    .description("Set WhatsApp DM policy (open, pairing, allowlist)")
+    .argument("<policy>", "Policy: open, pairing, or allowlist")
+    .action(async (policy: string) => {
+      const validPolicies = ["open", "pairing", "allowlist"];
+      if (!validPolicies.includes(policy.toLowerCase())) {
+        console.error(`Invalid policy. Must be one of: ${validPolicies.join(", ")}`);
+        process.exit(1);
+      }
+
+      const config = await loadConfig();
+      if (!config.channels) {
+        config.channels = {};
+      }
+      if (!config.channels.whatsapp) {
+        config.channels.whatsapp = {
+          enabled: false,
+          dmPolicy: "pairing",
+          allowFrom: [],
+        };
+      }
+
+      config.channels.whatsapp.dmPolicy = policy.toLowerCase() as "open" | "pairing" | "allowlist";
+      await saveConfig(config);
+      console.log(`\n✅ WhatsApp DM policy set to: ${policy}\n`);
+    });
+
+  const allowlistCmd = new Command("allowlist")
+    .description("Manage WhatsApp allowlist");
+
+  allowlistCmd
+    .command("add")
+    .description("Add phone number to allowlist")
+    .argument("<phone>", "Phone number (e.g., +1234567890)")
+    .action(async (phone: string) => {
+      const config = await loadConfig();
+      if (!config.channels) {
+        config.channels = {};
+      }
+      if (!config.channels.whatsapp) {
+        config.channels.whatsapp = {
+          enabled: false,
+          dmPolicy: "allowlist",
+          allowFrom: [],
+        };
+      }
+
+      const normalizedPhone = phone.replace(/[^0-9+]/g, "");
+      const allowFrom = config.channels.whatsapp.allowFrom || [];
+
+      if (allowFrom.includes(normalizedPhone)) {
+        console.log(`\n⚠️  Phone number ${normalizedPhone} is already in allowlist\n`);
+        return;
+      }
+
+      config.channels.whatsapp.allowFrom = [...allowFrom, normalizedPhone];
+      config.channels.whatsapp.dmPolicy = "allowlist"; // Auto-set policy to allowlist
+      await saveConfig(config);
+      console.log(`\n✅ Added ${normalizedPhone} to WhatsApp allowlist\n`);
+    });
+
+  allowlistCmd
+    .command("remove")
+    .description("Remove phone number from allowlist")
+    .argument("<phone>", "Phone number to remove")
+    .action(async (phone: string) => {
+      const config = await loadConfig();
+      if (!config.channels?.whatsapp?.allowFrom) {
+        console.log("\n⚠️  Allowlist is empty\n");
+        return;
+      }
+
+      const normalizedPhone = phone.replace(/[^0-9+]/g, "");
+      const allowFrom = config.channels.whatsapp.allowFrom || [];
+
+      if (!allowFrom.includes(normalizedPhone)) {
+        console.log(`\n⚠️  Phone number ${normalizedPhone} is not in allowlist\n`);
+        return;
+      }
+
+      config.channels.whatsapp.allowFrom = allowFrom.filter((p) => p !== normalizedPhone);
+      await saveConfig(config);
+      console.log(`\n✅ Removed ${normalizedPhone} from WhatsApp allowlist\n`);
+    });
+
+  allowlistCmd
+    .command("list")
+    .description("List all phone numbers in allowlist")
+    .action(async () => {
+      const config = await loadConfig();
+      const allowFrom = config.channels?.whatsapp?.allowFrom || [];
+
+      if (allowFrom.length === 0) {
+        console.log("\n📋 WhatsApp allowlist is empty\n");
+        return;
+      }
+
+      console.log("\n📋 WhatsApp Allowlist:\n");
+      allowFrom.forEach((phone, index) => {
+        console.log(`  ${index + 1}. ${phone}`);
+      });
+      console.log();
+    });
+
+  whatsappCmd.addCommand(allowlistCmd);
+  cmd.addCommand(whatsappCmd);
 
   cmd
     .command("status")
@@ -176,6 +292,124 @@ async function loginWhatsApp(): Promise<void> {
     console.error("\n❌ Failed to start WhatsApp:", error);
     config.channels!.whatsapp!.enabled = originalEnabled;
     await saveConfig(config);
+    process.exit(1);
+  }
+}
+
+async function loginDiscord(): Promise<void> {
+  console.log("\n💬 Discord Login\n");
+  console.log("This will configure Discord bot connection.");
+  console.log("You need a Discord bot token from https://discord.com/developers/applications\n");
+
+  const readline = await import("readline");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const question = (query: string): Promise<string> => {
+    return new Promise((resolve) => {
+      rl.question(query, resolve);
+    });
+  };
+
+  try {
+    const token = await question("Enter your Discord bot token: ");
+
+    if (!token.trim()) {
+      console.error("\n❌ Bot token is required\n");
+      rl.close();
+      process.exit(1);
+    }
+
+    const config = await loadConfig();
+
+    // Ensure Discord config exists
+    if (!config.channels) {
+      config.channels = {};
+    }
+    if (!config.channels.discord) {
+      config.channels.discord = {
+        enabled: false,
+        token: "",
+        dm: {
+          enabled: true,
+          policy: "pairing",
+          allowFrom: [],
+        },
+      };
+    }
+
+    // Update config with token
+    config.channels.discord.token = token.trim();
+    config.channels.discord.enabled = true;
+
+    await saveConfig(config);
+
+    console.log("\n✅ Discord bot token saved!");
+    console.log("Discord is now enabled in your config.");
+    console.log("Start the gateway server to connect the bot.\n");
+    rl.close();
+  } catch (error) {
+    console.error("\n❌ Failed to configure Discord:", error);
+    rl.close();
+    process.exit(1);
+  }
+}
+
+async function loginSignal(): Promise<void> {
+  console.log("\n📱 Signal Login\n");
+  console.log("Signal integration requires signal-cli to be installed and configured.");
+  console.log("For more information, visit: https://github.com/AsamK/signal-cli\n");
+
+  const readline = await import("readline");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const question = (query: string): Promise<string> => {
+    return new Promise((resolve) => {
+      rl.question(query, resolve);
+    });
+  };
+
+  try {
+    const proceed = await question("Do you have signal-cli installed and configured? (yes/no): ");
+
+    if (proceed.toLowerCase() !== "yes" && proceed.toLowerCase() !== "y") {
+      console.log("\n⚠️  Please install and configure signal-cli first.");
+      console.log("Visit https://github.com/AsamK/signal-cli for installation instructions.\n");
+      rl.close();
+      process.exit(0);
+    }
+
+    const config = await loadConfig();
+
+    // Ensure Signal config exists
+    if (!config.channels) {
+      config.channels = {};
+    }
+    if (!config.channels.signal) {
+      config.channels.signal = {
+        enabled: false,
+        dmPolicy: "pairing",
+        allowFrom: [],
+      };
+    }
+
+    // Enable Signal
+    config.channels.signal.enabled = true;
+
+    await saveConfig(config);
+
+    console.log("\n✅ Signal is now enabled in your config.");
+    console.log("Note: Full Signal integration requires signal-cli setup.");
+    console.log("Start the gateway server to connect Signal.\n");
+    rl.close();
+  } catch (error) {
+    console.error("\n❌ Failed to configure Signal:", error);
+    rl.close();
     process.exit(1);
   }
 }

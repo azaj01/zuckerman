@@ -8,6 +8,9 @@ import { createGrepTool } from "./grep/index.js";
 import { createMultiEditTool } from "./multiedit/index.js";
 import { createBatchTool, type BatchExecutionContext } from "./batch/index.js";
 import { createWhatsAppTool } from "./channels/whatsapp.js";
+import { createTelegramTool } from "./channels/telegram.js";
+import { createDiscordTool } from "./channels/discord.js";
+import { createSignalTool } from "./channels/signal.js";
 
 export class ZuckermanToolRegistry {
   private tools = new Map<string, Tool>();
@@ -25,6 +28,9 @@ export class ZuckermanToolRegistry {
     this.register(createGrepTool());
     this.register(createMultiEditTool());
     this.register(createWhatsAppTool());
+    this.register(createTelegramTool());
+    this.register(createDiscordTool());
+    this.register(createSignalTool());
     
     // Register batch tool with execution context
     this.registerBatchTool();

@@ -9,9 +9,11 @@ export class TelegramChannel implements Channel {
   private config: TelegramConfig;
   private messageHandlers: Array<(message: ChannelMessage) => void> = [];
   private isRunning = false;
+  private connectionCallback?: (connected: boolean) => void;
 
-  constructor(config: TelegramConfig) {
+  constructor(config: TelegramConfig, connectionCallback?: (connected: boolean) => void) {
     this.config = config;
+    this.connectionCallback = connectionCallback;
   }
 
   async start(): Promise<void> {
@@ -32,6 +34,25 @@ export class TelegramChannel implements Channel {
     try {
       this.bot = new Bot(this.config.botToken);
 
+      // Verify bot token and check for conflicts BEFORE starting
+      try {
+        await this.bot.api.getMe();
+      } catch (verifyError: any) {
+        // If we get a 409 conflict, another instance is running
+        if (verifyError?.error_code === 409 || 
+            (verifyError?.description && verifyError.description.includes("terminated by other getUpdates request"))) {
+          console.error("[Telegram] Cannot start: Another bot instance is already running with this token. Only one instance can run at a time. Please stop the other instance first.");
+          this.bot = null;
+          this.isRunning = false;
+          if (this.connectionCallback) {
+            this.connectionCallback(false);
+          }
+          return;
+        }
+        // For other errors (like invalid token), throw
+        throw verifyError;
+      }
+
       // Handle incoming messages
       this.bot.on("message:text", async (ctx: Context) => {
         await this.handleIncomingMessage(ctx);
@@ -42,12 +63,37 @@ export class TelegramChannel implements Channel {
         await this.handleIncomingMessage(ctx);
       });
 
-      // Start bot
-      await this.bot.start();
+      // Add error handler
+      this.bot.catch((err) => {
+        console.error("[Telegram] Error in bot handler:", err);
+      });
+
+      // Start bot - bot.start() doesn't resolve, it runs indefinitely
+      // So we start it without awaiting and mark as running immediately
+      this.bot.start().catch((err) => {
+        console.error("[Telegram] Bot start error:", err);
+        this.isRunning = false;
+        if (this.connectionCallback) {
+          this.connectionCallback(false);
+        }
+      });
+      
+      // Mark as running immediately after starting (bot.start() doesn't resolve)
       this.isRunning = true;
       console.log("[Telegram] Bot started successfully");
-    } catch (error) {
+      
+      // Broadcast connection status
+      if (this.connectionCallback) {
+        this.connectionCallback(true);
+      }
+    } catch (error: any) {
       console.error("[Telegram] Failed to start:", error);
+      this.bot = null;
+      this.isRunning = false;
+      // Broadcast disconnected status
+      if (this.connectionCallback) {
+        this.connectionCallback(false);
+      }
       throw error;
     }
   }
@@ -58,6 +104,10 @@ export class TelegramChannel implements Channel {
       this.bot = null;
     }
     this.isRunning = false;
+    // Broadcast disconnected status
+    if (this.connectionCallback) {
+      this.connectionCallback(false);
+    }
   }
 
   async send(message: string, to: string): Promise<void> {

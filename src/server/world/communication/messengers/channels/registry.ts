@@ -22,13 +22,20 @@ export class ChannelRegistry {
   }
 
   async startAll(): Promise<void> {
-    for (const channel of this.channels.values()) {
+    // Start all channels in parallel (non-blocking)
+    const startPromises = Array.from(this.channels.values()).map(async (channel) => {
       try {
+        console.log(`[Channels] Starting channel ${channel.id}...`);
         await channel.start();
+        console.log(`[Channels] Channel ${channel.id} started successfully`);
       } catch (err) {
         console.error(`[Channels] Failed to start channel ${channel.id}:`, err);
+        // Continue starting other channels even if one fails
       }
-    }
+    });
+    
+    // Wait for all channels to attempt startup (but don't block indefinitely)
+    await Promise.allSettled(startPromises);
   }
 
   async stopAll(): Promise<void> {

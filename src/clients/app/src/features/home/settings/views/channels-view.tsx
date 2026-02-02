@@ -1,9 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, CheckCircle2, AlertCircle, QrCode, MessageSquare, Power } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2, CheckCircle2, AlertCircle, QrCode, MessageSquare, Power, X, Plus, Shield } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { GatewayClient } from "../../../../core/gateway/client";
+import { useWhatsAppChannel } from "../../../../hooks/channels/use-whatsapp-channel";
+import { useTelegramChannel } from "../../../../hooks/channels/use-telegram-channel";
+import { useDiscordChannel } from "../../../../hooks/channels/use-discord-channel";
+import { useSignalChannel } from "../../../../hooks/channels/use-signal-channel";
 
 type ChannelId = "whatsapp" | "telegram" | "discord" | "slack" | "signal" | "imessage";
 
@@ -56,10 +63,26 @@ const CHANNEL_INFO: Record<ChannelId, { name: string; description: string; icon:
   },
 };
 
+interface WhatsAppConfig {
+  dmPolicy?: "open" | "pairing" | "allowlist";
+  allowFrom?: string[];
+}
+
 export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
   const [channels, setChannels] = useState<ChannelStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [channelStates, setChannelStates] = useState<Record<string, ChannelState>>({});
+  const [newPhoneNumber, setNewPhoneNumber] = useState("");
+  const [telegramBotToken, setTelegramBotToken] = useState("");
+  const [discordBotToken, setDiscordBotToken] = useState("");
+
+  // Use hooks for WhatsApp, Telegram, Discord, and Signal
+  const whatsapp = useWhatsAppChannel(gatewayClient, { enabled: true });
+  const telegram = useTelegramChannel(gatewayClient, { enabled: true });
+  const discord = useDiscordChannel(gatewayClient, { enabled: true });
+  const signal = useSignalChannel(gatewayClient, { enabled: true });
+  
+  // Refs for managing timers (for channels without hooks)
   const qrTimeoutRefs = React.useRef<Record<string, NodeJS.Timeout | null>>({});
   const connectionPollIntervals = React.useRef<Record<string, NodeJS.Timeout | null>>({});
 
@@ -87,6 +110,36 @@ export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
     loadChannelStatus();
   }, [loadChannelStatus]);
 
+  // WhatsApp config handlers using hook
+  const handleDmPolicyChange = (policy: "open" | "pairing" | "allowlist") => {
+    whatsapp.saveConfig({ dmPolicy: policy });
+  };
+
+  const handleAddToAllowlist = () => {
+    if (!newPhoneNumber.trim()) return;
+
+    const phoneNumber = newPhoneNumber.trim().replace(/[^0-9+]/g, "");
+    if (!phoneNumber) return;
+
+    const currentAllowlist = whatsapp.config.allowFrom || [];
+    if (currentAllowlist.includes(phoneNumber)) {
+      setNewPhoneNumber("");
+      return;
+    }
+
+    whatsapp.saveConfig({
+      allowFrom: [...currentAllowlist, phoneNumber],
+    });
+    setNewPhoneNumber("");
+  };
+
+  const handleRemoveFromAllowlist = (phoneNumber: string) => {
+    const currentAllowlist = whatsapp.config.allowFrom || [];
+    whatsapp.saveConfig({
+      allowFrom: currentAllowlist.filter((p) => p !== phoneNumber),
+    });
+  };
+
   // Helper to update channel state
   const updateChannelState = React.useCallback((channelId: string, updates: Partial<ChannelState>) => {
     setChannelStates((prev) => ({
@@ -107,154 +160,160 @@ export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
     }
   }, []);
 
-  // Listen for WhatsApp events
+  // State cache to prevent rapid toggles
+  const stateCacheRef = React.useRef<Record<string, { connected: boolean; timestamp: number }>>({});
+
+  // Listen for WhatsApp events - single source of truth from backend
   useEffect(() => {
-    const handleQrEvent = (e: CustomEvent<{ qr: string; channelId: string }>) => {
+    const handleQrEvent = (e: CustomEvent<{ qr: string | null; channelId: string; cleared?: boolean }>) => {
       const channelId = e.detail.channelId;
-      clearChannelTimers(channelId);
-      updateChannelState(channelId, {
-        qrCode: e.detail.qr,
-        connecting: false,
-        error: null,
-      });
-
-      // Start polling for connection (WhatsApp only for now)
-      if (channelId === "whatsapp" && gatewayClient && gatewayClient.isConnected()) {
-        let pollCount = 0;
-        const maxPolls = 60;
-
-        connectionPollIntervals.current[channelId] = setInterval(async () => {
-          pollCount++;
-          if (pollCount > maxPolls) {
-            clearChannelTimers(channelId);
-            return;
-          }
-
-          try {
-            const statusResponse = await gatewayClient.request("channels.status", {}) as {
-              ok: boolean;
-              result?: { status?: ChannelStatus[] };
-            };
-            const channelStatus = statusResponse.result?.status?.find((s) => s.id === channelId);
-            if (channelStatus?.connected) {
-              updateChannelState(channelId, {
-                qrCode: null,
-                connecting: false,
-                error: null,
-              });
-              clearChannelTimers(channelId);
-              loadChannelStatus();
-            }
-          } catch (err) {
-            console.debug("Error polling connection status:", err);
-          }
-        }, 2000);
-      }
-    };
-
-    const handleConnectionEvent = (e: CustomEvent<{ connected: boolean; channelId: string }>) => {
-      const channelId = e.detail.channelId;
-      if (e.detail.connected) {
+      
+      // Handle QR cleared event
+      if (e.detail.cleared || !e.detail.qr) {
         updateChannelState(channelId, {
           qrCode: null,
           connecting: false,
           error: null,
         });
         clearChannelTimers(channelId);
+        return;
+      }
+
+      // Only show QR if we're not already connected (check cache)
+      const cached = stateCacheRef.current[channelId];
+      if (cached?.connected) {
+        console.log("[ChannelsView] Ignoring QR - channel already connected");
+        return;
+      }
+
+      clearChannelTimers(channelId);
+      updateChannelState(channelId, {
+        qrCode: e.detail.qr,
+        connecting: false,
+        error: null,
+      });
+    };
+
+    const handleConnectionEvent = (e: CustomEvent<{ connected: boolean; channelId: string }>) => {
+      const channelId = e.detail.channelId;
+      const now = Date.now();
+      
+      // Cache state to prevent rapid toggles
+      const cached = stateCacheRef.current[channelId];
+      if (cached && cached.connected === e.detail.connected && (now - cached.timestamp) < 500) {
+        console.log("[ChannelsView] Ignoring duplicate connection event");
+        return;
+      }
+      
+      stateCacheRef.current[channelId] = {
+        connected: e.detail.connected,
+        timestamp: now,
+      };
+
+      // Sync UI state from backend event (single source of truth)
+      if (e.detail.connected) {
+        updateChannelState(channelId, {
+          qrCode: null, // Always clear QR on connection
+          connecting: false,
+          error: null,
+        });
+        clearChannelTimers(channelId);
+        // Reload status from backend to ensure sync
+        loadChannelStatus();
+      } else {
+        // On disconnect, clear QR and update state
+        updateChannelState(channelId, {
+          qrCode: null,
+          connecting: false,
+          error: null,
+        });
         loadChannelStatus();
       }
     };
 
     window.addEventListener("whatsapp-qr", handleQrEvent as EventListener);
     window.addEventListener("whatsapp-connection", handleConnectionEvent as EventListener);
+    window.addEventListener("telegram-connection", handleConnectionEvent as EventListener);
+    window.addEventListener("discord-connection", handleConnectionEvent as EventListener);
+    window.addEventListener("signal-connection", handleConnectionEvent as EventListener);
 
     return () => {
       window.removeEventListener("whatsapp-qr", handleQrEvent as EventListener);
       window.removeEventListener("whatsapp-connection", handleConnectionEvent as EventListener);
+      window.removeEventListener("telegram-connection", handleConnectionEvent as EventListener);
+      window.removeEventListener("discord-connection", handleConnectionEvent as EventListener);
+      window.removeEventListener("signal-connection", handleConnectionEvent as EventListener);
       Object.keys(qrTimeoutRefs.current).forEach(clearChannelTimers);
       Object.keys(connectionPollIntervals.current).forEach(clearChannelTimers);
     };
   }, [gatewayClient, loadChannelStatus, clearChannelTimers, updateChannelState]);
 
   const handleChannelConnect = async (channelId: ChannelId) => {
-    if (!gatewayClient || channelId !== "whatsapp") return; // Only WhatsApp supported for now
-
-    updateChannelState(channelId, { connecting: true, error: null, qrCode: null });
+    if (!gatewayClient) return;
 
     try {
-      if (!gatewayClient.isConnected()) {
-        await gatewayClient.connect();
-      }
-
-      // Enable channel in config
-      const configResponse = await gatewayClient.request("config.update", {
-        updates: {
-          channels: {
-            [channelId]: {
-              enabled: true,
-              dmPolicy: "pairing",
-              allowFrom: [],
-            },
-          },
-        },
-      }) as { ok: boolean; error?: { message: string } };
-
-      if (!configResponse.ok) {
-        throw new Error(configResponse.error?.message || "Failed to update config");
-      }
-
-      // Reload channels
-      const reloadResponse = await gatewayClient.request("channels.reload", {}) as {
-        ok: boolean;
-        error?: { message: string };
-      };
-
-      if (!reloadResponse.ok) {
-        throw new Error(reloadResponse.error?.message || "Failed to reload channels");
-      }
-
-      // Start channel
-      const startResponse = await gatewayClient.request("channels.start", {
-        channelId,
-      }) as { ok: boolean; error?: { message: string } };
-
-      if (!startResponse.ok) {
-        throw new Error(startResponse.error?.message || `Failed to start ${channelId}`);
-      }
-
-      // Check if already connected
-      try {
-        const statusResponse = await gatewayClient.request("channels.status", {}) as {
-          ok: boolean;
-          result?: { status?: ChannelStatus[] };
-        };
-        const channelStatus = statusResponse.result?.status?.find((s) => s.id === channelId);
-        if (channelStatus?.connected) {
-          updateChannelState(channelId, { connecting: false, qrCode: null });
-          loadChannelStatus();
-          return;
-        }
-      } catch {
-        // Continue with QR code flow
-      }
-
-      // Wait for QR code (WhatsApp only)
       if (channelId === "whatsapp") {
-        updateChannelState(channelId, { qrCode: "pending", connecting: false });
-
-        qrTimeoutRefs.current[channelId] = setTimeout(() => {
+        await whatsapp.connect();
+      } else if (channelId === "telegram") {
+        if (!telegramBotToken.trim()) {
           updateChannelState(channelId, {
-            error: "QR code generation timed out. Please try again.",
-            qrCode: null,
+            error: "Please provide a bot token to connect Telegram",
             connecting: false,
           });
-        }, 15000);
+          return;
+        }
+        await telegram.connect(telegramBotToken);
+      } else if (channelId === "discord") {
+        if (!discordBotToken.trim()) {
+          updateChannelState(channelId, {
+            error: "Please provide a bot token to connect Discord",
+            connecting: false,
+          });
+          return;
+        }
+        await discord.connect(discordBotToken);
+      } else if (channelId === "signal") {
+        await signal.connect();
+      } else {
+        // For other channels, use the old manual approach
+        updateChannelState(channelId, { connecting: true, error: null });
+        
+        if (!gatewayClient.isConnected()) {
+          await gatewayClient.connect();
+        }
+
+        const configResponse = await gatewayClient.request("config.update", {
+          updates: {
+            channels: {
+              [channelId]: {
+                enabled: true,
+              },
+            },
+          },
+        }) as { ok: boolean; error?: { message: string } };
+
+        if (!configResponse.ok) {
+          throw new Error(configResponse.error?.message || "Failed to update config");
+        }
+
+        await gatewayClient.request("channels.reload", {});
+        
+        const startResponse = await gatewayClient.request("channels.start", {
+          channelId,
+        }) as { ok: boolean; error?: { message: string } };
+
+        if (!startResponse.ok) {
+          throw new Error(startResponse.error?.message || `Failed to start ${channelId}`);
+        }
+
+        setTimeout(() => {
+          loadChannelStatus();
+        }, 2000);
       }
     } catch (err: any) {
       updateChannelState(channelId, {
         error: err.message || `Failed to connect ${channelId}`,
         connecting: false,
-        qrCode: null,
       });
     }
   };
@@ -263,30 +322,39 @@ export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
     if (!gatewayClient) return;
 
     try {
-      const stopResponse = await gatewayClient.request("channels.stop", {
-        channelId,
-      }) as { ok: boolean; error?: { message: string } };
+      if (channelId === "whatsapp") {
+        await whatsapp.disconnect();
+      } else if (channelId === "telegram") {
+        await telegram.disconnect();
+      } else if (channelId === "discord") {
+        await discord.disconnect();
+      } else if (channelId === "signal") {
+        await signal.disconnect();
+      } else {
+        // For other channels, use manual approach
+        const stopResponse = await gatewayClient.request("channels.stop", {
+          channelId,
+        }) as { ok: boolean; error?: { message: string } };
 
-      if (!stopResponse.ok) {
-        throw new Error(stopResponse.error?.message || `Failed to stop ${channelId}`);
-      }
+        if (!stopResponse.ok) {
+          throw new Error(stopResponse.error?.message || `Failed to stop ${channelId}`);
+        }
 
-      // Disable channel in config
-      await gatewayClient.request("config.update", {
-        updates: {
-          channels: {
-            [channelId]: {
-              enabled: false,
+        await gatewayClient.request("config.update", {
+          updates: {
+            channels: {
+              [channelId]: {
+                enabled: false,
+              },
             },
           },
-        },
-      });
+        });
 
-      // Reload channels
-      await gatewayClient.request("channels.reload", {});
-
-      clearChannelTimers(channelId);
-      updateChannelState(channelId, { qrCode: null, connecting: false, error: null });
+        await gatewayClient.request("channels.reload", {});
+        clearChannelTimers(channelId);
+        updateChannelState(channelId, { qrCode: null, connecting: false, error: null });
+      }
+      
       loadChannelStatus();
     } catch (err: any) {
       updateChannelState(channelId, {
@@ -297,10 +365,42 @@ export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
 
   const renderChannel = (channelId: ChannelId) => {
     const channel = channels.find((c) => c.id === channelId);
-    const state = channelStates[channelId] || { qrCode: null, connecting: false, error: null };
     const info = CHANNEL_INFO[channelId];
-    const isConnected = channel?.connected || false;
     const isWhatsApp = channelId === "whatsapp";
+    const isTelegram = channelId === "telegram";
+    const isDiscord = channelId === "discord";
+    const isSignal = channelId === "signal";
+    
+    // Use hook state for WhatsApp, Telegram, Discord, and Signal, fallback to manual state for others
+    let isConnected: boolean;
+    let connecting: boolean;
+    let qrCode: string | null = null;
+    let error: string | null = null;
+    
+    if (isWhatsApp) {
+      isConnected = whatsapp.connected;
+      connecting = whatsapp.connecting;
+      qrCode = whatsapp.qrCode;
+      error = whatsapp.error;
+    } else if (isTelegram) {
+      isConnected = telegram.connected;
+      connecting = telegram.connecting;
+      error = telegram.error;
+    } else if (isDiscord) {
+      isConnected = discord.connected;
+      connecting = discord.connecting;
+      error = discord.error;
+    } else if (isSignal) {
+      isConnected = signal.connected;
+      connecting = signal.connecting;
+      error = signal.error;
+    } else {
+      const state = channelStates[channelId] || { qrCode: null, connecting: false, error: null };
+      isConnected = channel?.connected || false;
+      connecting = state.connecting;
+      qrCode = state.qrCode;
+      error = state.error;
+    }
 
     return (
       <div key={channelId} className="border border-border rounded-md bg-card">
@@ -327,9 +427,9 @@ export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
               <Button
                 size="sm"
                 onClick={() => handleChannelConnect(channelId)}
-                disabled={state.connecting || !gatewayClient}
+                disabled={connecting || !gatewayClient || (isTelegram && !telegramBotToken.trim()) || (isDiscord && !discordBotToken.trim())}
               >
-                {state.connecting ? (
+                {connecting ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     Connecting...
@@ -337,6 +437,11 @@ export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
                 ) : isWhatsApp ? (
                   <>
                     <QrCode className="h-4 w-4 mr-2" />
+                    Connect
+                  </>
+                ) : isTelegram ? (
+                  <>
+                    <MessageSquare className="h-4 w-4 mr-2" />
                     Connect
                   </>
                 ) : (
@@ -350,21 +455,14 @@ export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
           </div>
         </div>
         <div className="px-6 py-4 space-y-4">
-          {isConnected && !state.qrCode && (
+          {isConnected && !qrCode && (
             <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-md">
               <CheckCircle2 className="h-4 w-4" />
               <span>Successfully connected</span>
             </div>
           )}
 
-          {state.qrCode === "pending" && (
-            <div className="flex items-center gap-3 p-4 bg-muted rounded-md border border-dashed">
-              <Loader2 className="h-5 w-5 text-primary animate-spin" />
-              <span className="text-sm text-muted-foreground">Generating QR Code...</span>
-            </div>
-          )}
-
-          {state.qrCode && state.qrCode !== "pending" && isWhatsApp && (
+          {qrCode && qrCode !== "pending" && isWhatsApp && (
             <div className="flex flex-col items-center gap-4 p-6 bg-muted rounded-md border">
               <div className="text-center space-y-2">
                 <div className="font-semibold text-sm">Pair with WhatsApp</div>
@@ -373,7 +471,7 @@ export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
                 </div>
               </div>
               <div className="p-4 bg-white rounded-lg">
-                <QRCodeSVG value={state.qrCode} size={200} level="M" />
+                <QRCodeSVG value={qrCode} size={200} level="M" />
               </div>
               {!isConnected && (
                 <div className="flex flex-col items-center gap-2">
@@ -386,13 +484,166 @@ export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
             </div>
           )}
 
-          {state.error && (
+          {error && (
             <div className="flex items-start gap-2 text-sm text-destructive p-4 bg-destructive/5 border border-destructive/20 rounded-md">
               <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
               <div className="flex-1">
                 <div className="font-semibold">Connection failed</div>
-                <div className="text-xs opacity-80">{state.error}</div>
+                <div className="text-xs opacity-80">{error}</div>
               </div>
+            </div>
+          )}
+
+          {/* Telegram Bot Token Input */}
+          {isTelegram && !isConnected && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="telegram-token">Telegram Bot Token</Label>
+                <div className="text-xs text-muted-foreground mb-2 space-y-1">
+                  <p>1) Open Telegram and chat with @BotFather</p>
+                  <p>2) Run /newbot (or /mybots)</p>
+                  <p>3) Copy the token (looks like 123456:ABC...)</p>
+                </div>
+                <Input
+                  id="telegram-token"
+                  type="password"
+                  placeholder="Enter bot token"
+                  value={telegramBotToken}
+                  onChange={(e) => setTelegramBotToken(e.target.value)}
+                  disabled={connecting}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Discord Bot Token Input */}
+          {isDiscord && !isConnected && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="discord-token">Discord Bot Token</Label>
+                <div className="text-xs text-muted-foreground mb-2 space-y-1">
+                  <p>1) Go to https://discord.com/developers/applications</p>
+                  <p>2) Create a new application or select an existing one</p>
+                  <p>3) Go to Bot section and copy the token</p>
+                  <p>4) Enable "Message Content Intent" in Privileged Gateway Intents</p>
+                </div>
+                <Input
+                  id="discord-token"
+                  type="password"
+                  placeholder="Enter bot token"
+                  value={discordBotToken}
+                  onChange={(e) => setDiscordBotToken(e.target.value)}
+                  disabled={connecting}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Signal Setup Info */}
+          {isSignal && !isConnected && (
+            <div className="space-y-4">
+              <div className="p-4 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-md">
+                <div className="text-sm font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
+                  Signal Integration Setup
+                </div>
+                <div className="text-xs text-yellow-700 dark:text-yellow-300 space-y-1">
+                  <p>Signal integration requires signal-cli to be installed and configured.</p>
+                  <p>1) Install signal-cli: https://github.com/AsamK/signal-cli</p>
+                  <p>2) Register your phone number with signal-cli</p>
+                  <p>3) Configure signal-cli to work with this application</p>
+                  <p className="mt-2 font-semibold">Note: Full Signal integration is coming soon.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* WhatsApp Security Controls */}
+          {isWhatsApp && isConnected && (
+            <div className="pt-4 border-t border-border space-y-4">
+              <div className="flex items-center gap-2">
+                <Shield className="h-4 w-4 text-muted-foreground" />
+                <div className="font-semibold text-sm">Security & Access Control</div>
+              </div>
+
+              {/* DM Policy */}
+              <div className="space-y-2">
+                <Label htmlFor="dm-policy">Direct Message Policy</Label>
+                <Select
+                  value={whatsapp.config.dmPolicy || "pairing"}
+                  onValueChange={(value) => handleDmPolicyChange(value as "open" | "pairing" | "allowlist")}
+                  disabled={whatsapp.savingConfig}
+                >
+                  <SelectTrigger id="dm-policy">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open">Open - Accept messages from anyone</SelectItem>
+                    <SelectItem value="pairing">Pairing - Only accept from contacts you've interacted with</SelectItem>
+                    <SelectItem value="allowlist">Allowlist - Only accept from specific phone numbers</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {whatsapp.config.dmPolicy === "open" && "All incoming messages will be accepted."}
+                  {whatsapp.config.dmPolicy === "pairing" && "Only messages from contacts you've previously interacted with will be accepted."}
+                  {whatsapp.config.dmPolicy === "allowlist" && "Only messages from phone numbers in the allowlist will be accepted."}
+                </p>
+              </div>
+
+              {/* Allowlist Management */}
+              {whatsapp.config.dmPolicy === "allowlist" && (
+                <div className="space-y-2">
+                  <Label>Allowed Phone Numbers</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Enter phone number (e.g., +1234567890)"
+                      value={newPhoneNumber}
+                      onChange={(e) => setNewPhoneNumber(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddToAllowlist();
+                        }
+                      }}
+                      disabled={whatsapp.savingConfig}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleAddToAllowlist}
+                      disabled={whatsapp.savingConfig || !newPhoneNumber.trim()}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {whatsapp.config.allowFrom && whatsapp.config.allowFrom.length > 0 && (
+                    <div className="space-y-1 mt-2">
+                      {whatsapp.config.allowFrom.map((phoneNumber) => (
+                        <div
+                          key={phoneNumber}
+                          className="flex items-center justify-between p-2 bg-muted rounded-md text-sm"
+                        >
+                          <span className="font-mono">{phoneNumber}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveFromAllowlist(phoneNumber)}
+                            disabled={whatsapp.savingConfig}
+                            className="h-6 w-6 p-0"
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {(!whatsapp.config.allowFrom || whatsapp.config.allowFrom.length === 0) && (
+                    <p className="text-xs text-muted-foreground">
+                      No phone numbers in allowlist. Add numbers above to allow messages from specific contacts.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

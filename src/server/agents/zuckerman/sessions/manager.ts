@@ -380,6 +380,45 @@ export class SessionManager {
   }
 
   /**
+   * Update session channel metadata (for channel tools to access)
+   */
+  async updateChannelMetadata(
+    sessionId: SessionId,
+    metadata: {
+      channel?: string;
+      to?: string;
+      accountId?: string;
+    },
+  ): Promise<void> {
+    const state = this.sessions.get(sessionId);
+    if (!state) return;
+
+    const sessionKey = deriveSessionKey(
+      this.agentId,
+      state.session.type,
+      state.session.label,
+    );
+    const store = loadSessionStore(this.storePath);
+    const entry = store[sessionKey];
+
+    if (entry) {
+      entry.lastChannel = metadata.channel || entry.lastChannel;
+      entry.lastTo = metadata.to || entry.lastTo;
+      entry.deliveryContext = {
+        channel: metadata.channel || entry.deliveryContext?.channel,
+        to: metadata.to || entry.deliveryContext?.to,
+        accountId: metadata.accountId || entry.deliveryContext?.accountId,
+      };
+      entry.origin = {
+        channel: metadata.channel || entry.origin?.channel,
+        accountId: metadata.accountId || entry.origin?.accountId,
+      };
+      entry.updatedAt = Date.now();
+      await saveSessionStore(this.storePath, store);
+    }
+  }
+
+  /**
    * Get messages for context, respecting token limits
    * Loads from transcript if needed, prioritizing recent messages
    */

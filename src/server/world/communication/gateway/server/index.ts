@@ -70,8 +70,11 @@ export async function startGatewayServer(
     broadcastEvent,
   );
   
-  // Start enabled channels
-  await channelRegistry.startAll();
+  // Start enabled channels in background (non-blocking)
+  console.log(`[Gateway] Starting channels in background...`);
+  channelRegistry.startAll().catch((err) => {
+    console.error(`[Gateway] Channel startup error:`, err);
+  });
 
   const handlers = createCoreHandlers({
     sessionManager: defaultSessionManager,

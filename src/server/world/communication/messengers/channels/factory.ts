@@ -2,6 +2,7 @@ import { ChannelRegistry } from "./registry.js";
 import { WhatsAppChannel } from "./whatsapp.js";
 import { TelegramChannel } from "./telegram.js";
 import { DiscordChannel } from "./discord.js";
+import { SignalChannel } from "./signal.js";
 import { SlackChannel } from "./slack.js";
 import { WebChatChannel } from "./webchat.js";
 import type { ZuckermanConfig } from "@server/world/config/types.js";
@@ -29,26 +30,33 @@ export async function initializeChannels(
       config.channels.whatsapp,
       (qr) => {
         // Broadcast QR code to all connected gateway clients
+        // Empty string means QR was cleared
         if (broadcastEvent) {
-          broadcastEvent({
-            type: "event",
-            event: "channel.whatsapp.qr",
-            payload: { qr, channelId: "whatsapp", ts: Date.now() },
-          });
+          if (qr && qr.length > 0) {
+            broadcastEvent({
+              type: "event",
+              event: "channel.whatsapp.qr",
+              payload: { qr, channelId: "whatsapp", ts: Date.now() },
+            });
+          } else {
+            // Broadcast QR cleared event
+            broadcastEvent({
+              type: "event",
+              event: "channel.whatsapp.qr",
+              payload: { qr: null, channelId: "whatsapp", cleared: true, ts: Date.now() },
+            });
+          }
         }
       },
       (connected) => {
         // Broadcast connection status to all connected gateway clients
-        console.log(`[WhatsApp Factory] Connection status changed: ${connected}`);
+        // Only broadcast if status actually changed
         if (broadcastEvent) {
-          console.log("[WhatsApp Factory] Broadcasting connection event");
           broadcastEvent({
             type: "event",
             event: "channel.whatsapp.connection",
             payload: { connected, channelId: "whatsapp", ts: Date.now() },
           });
-        } else {
-          console.warn("[WhatsApp Factory] No broadcastEvent function available");
         }
       },
     );
@@ -81,6 +89,13 @@ export async function initializeChannels(
           );
           session = sm.getSession(newSession.id)!;
         }
+
+        // Store channel metadata for tool access
+        await sm.updateChannelMetadata(route.sessionId, {
+          channel: channelId,
+          to: message.from,
+          accountId: "default",
+        });
 
         // Add message to session
         sm.addMessage(route.sessionId, "user", message.content);
@@ -157,6 +172,13 @@ export async function initializeChannels(
           session = sm.getSession(newSession.id)!;
         }
 
+        // Store channel metadata for tool access
+        await sm.updateChannelMetadata(route.sessionId, {
+          channel: channelId,
+          to: message.from,
+          accountId: "default",
+        });
+
         // Add message to session
         sm.addMessage(route.sessionId, "user", message.content);
 
@@ -190,7 +212,19 @@ export async function initializeChannels(
 
   // Initialize Telegram if enabled
   if (config.channels?.telegram?.enabled) {
-    const telegramChannel = new TelegramChannel(config.channels.telegram);
+    const telegramChannel = new TelegramChannel(
+      config.channels.telegram,
+      (connected) => {
+        // Broadcast connection status to all connected gateway clients
+        if (broadcastEvent) {
+          broadcastEvent({
+            type: "event",
+            event: "channel.telegram.connection",
+            payload: { connected, channelId: "telegram", ts: Date.now() },
+          });
+        }
+      },
+    );
     await setupChannelRouting(telegramChannel, "telegram", "telegram");
     
     registry.register(telegramChannel, {
@@ -205,7 +239,19 @@ export async function initializeChannels(
 
   // Initialize Discord if enabled
   if (config.channels?.discord?.enabled) {
-    const discordChannel = new DiscordChannel(config.channels.discord);
+    const discordChannel = new DiscordChannel(
+      config.channels.discord,
+      (connected) => {
+        // Broadcast connection status to all connected gateway clients
+        if (broadcastEvent) {
+          broadcastEvent({
+            type: "event",
+            event: "channel.discord.connection",
+            payload: { connected, channelId: "discord", ts: Date.now() },
+          });
+        }
+      },
+    );
     await setupChannelRouting(discordChannel, "discord", "discord");
     
     registry.register(discordChannel, {
@@ -213,6 +259,31 @@ export async function initializeChannels(
       type: "discord",
       enabled: config.channels.discord.enabled,
       config: config.channels.discord as Record<string, unknown>,
+    });
+  }
+
+  // Initialize Signal if enabled
+  if (config.channels?.signal?.enabled) {
+    const signalChannel = new SignalChannel(
+      config.channels.signal,
+      (connected) => {
+        // Broadcast connection status to all connected gateway clients
+        if (broadcastEvent) {
+          broadcastEvent({
+            type: "event",
+            event: "channel.signal.connection",
+            payload: { connected, channelId: "signal", ts: Date.now() },
+          });
+        }
+      },
+    );
+    await setupChannelRouting(signalChannel, "signal", "signal");
+    
+    registry.register(signalChannel, {
+      id: "signal",
+      type: "signal",
+      enabled: config.channels.signal.enabled,
+      config: config.channels.signal as Record<string, unknown>,
     });
   }
 

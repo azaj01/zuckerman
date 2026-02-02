@@ -9,9 +9,11 @@ export class DiscordChannel implements Channel {
   private config: DiscordConfig;
   private messageHandlers: Array<(message: ChannelMessage) => void> = [];
   private isRunning = false;
+  private connectionCallback?: (connected: boolean) => void;
 
-  constructor(config: DiscordConfig) {
+  constructor(config: DiscordConfig, connectionCallback?: (connected: boolean) => void) {
     this.config = config;
+    this.connectionCallback = connectionCallback;
   }
 
   async start(): Promise<void> {
@@ -43,6 +45,10 @@ export class DiscordChannel implements Channel {
       this.client.once(Events.ClientReady, () => {
         console.log(`[Discord] Bot logged in as ${this.client!.user!.tag}`);
         this.isRunning = true;
+        // Broadcast connection status
+        if (this.connectionCallback) {
+          this.connectionCallback(true);
+        }
       });
 
       // Handle incoming messages
@@ -54,6 +60,11 @@ export class DiscordChannel implements Channel {
       await this.client.login(this.config.token);
     } catch (error) {
       console.error("[Discord] Failed to start:", error);
+      this.isRunning = false;
+      // Broadcast disconnected status
+      if (this.connectionCallback) {
+        this.connectionCallback(false);
+      }
       throw error;
     }
   }
@@ -64,6 +75,10 @@ export class DiscordChannel implements Channel {
       this.client = null;
     }
     this.isRunning = false;
+    // Broadcast disconnected status
+    if (this.connectionCallback) {
+      this.connectionCallback(false);
+    }
   }
 
   async send(message: string, to: string): Promise<void> {
