@@ -48,22 +48,44 @@ export function createTelegramTool(): Tool {
         if (!chatId || chatId === "me" || chatId.toLowerCase() === "myself") {
           if (executionContext?.sessionId && securityContext?.agentId) {
             try {
-              // Load session store to get delivery context
+              // Load session store to get delivery context (skip cache to get latest data)
               const storePath = resolveSessionStorePath(securityContext.agentId);
-              const store = loadSessionStore(storePath);
+              const store = loadSessionStore(storePath, { skipCache: true });
               
               // Find session entry by sessionId
               const sessionEntry = Object.values(store).find(
                 entry => entry.sessionId === executionContext.sessionId
               );
               
-              // Try to get chat ID from delivery context
               if (sessionEntry) {
                 // Check if this session is from Telegram channel
-                if (sessionEntry.lastChannel === "telegram" || sessionEntry.origin?.channel === "telegram") {
-                  chatId = sessionEntry.deliveryContext?.to || 
-                          sessionEntry.lastTo;
+                const isTelegramSession = sessionEntry.lastChannel === "telegram" || 
+                                         sessionEntry.origin?.channel === "telegram";
+                
+                if (isTelegramSession) {
+                  // Try deliveryContext first, then lastTo
+                  chatId = sessionEntry.deliveryContext?.to || sessionEntry.lastTo;
+                  
+                  if (chatId) {
+                    console.log(`[Telegram] Auto-detected chat ID ${chatId} from session ${executionContext.sessionId}`);
+                  }
+                } else {
+                  // If not a Telegram session, try to find any recent Telegram session
+                  // This handles cases where user is chatting via app but wants to send via Telegram
+                  const telegramEntries = Object.values(store)
+                    .filter(entry => 
+                      (entry.lastChannel === "telegram" || entry.origin?.channel === "telegram") &&
+                      entry.deliveryContext?.to
+                    )
+                    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+                  
+                  if (telegramEntries.length > 0) {
+                    chatId = telegramEntries[0].deliveryContext?.to || telegramEntries[0].lastTo;
+                    console.log(`[Telegram] Using chat ID ${chatId} from most recent Telegram session`);
+                  }
                 }
+              } else {
+                console.warn(`[Telegram] Session entry not found for sessionId: ${executionContext.sessionId}`);
               }
             } catch (err) {
               console.warn("[Telegram] Failed to load session for auto-detection:", err);
