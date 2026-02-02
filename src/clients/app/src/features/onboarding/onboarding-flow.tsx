@@ -22,6 +22,7 @@ export interface OnboardingState {
     apiKey: string;
     validated: boolean;
     error?: string;
+    model?: { id: string; name: string };
   };
   channel: {
     type: "whatsapp" | "telegram" | "discord" | "slack" | "signal" | "imessage" | "none";
@@ -65,6 +66,7 @@ export function OnboardingFlow({ onComplete, onSkip, gatewayClient }: Onboarding
       provider: null,
       apiKey: "",
       validated: false,
+      model: undefined,
     },
     channel: {
       type: "none",

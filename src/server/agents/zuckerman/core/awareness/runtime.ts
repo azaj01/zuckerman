@@ -325,6 +325,9 @@ export class ZuckermanAwareness implements AgentRuntime {
     llmTools: LLMTool[];
   }): Promise<AgentRunResult> {
     const { sessionId, runId, messages, toolCalls, securityContext, stream, model, temperature, llmTools } = params;
+    // #region agent log
+    fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runtime.ts:327',message:'handleToolCalls entry',data:{messagesLength:messages.length,toolCallsCount:toolCalls.length,toolCallIds:toolCalls.map(tc=>tc.id),messageRoles:messages.map(m=>m.role)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,D'})}).catch(()=>{});
+    // #endregion
     
     // Add assistant message with tool calls to history
     messages.push({
@@ -332,6 +335,9 @@ export class ZuckermanAwareness implements AgentRuntime {
       content: "",
       toolCalls,
     });
+    // #region agent log
+    fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runtime.ts:334',message:'Added assistant msg with toolCalls',data:{messagesLength:messages.length,lastMessageRole:messages[messages.length-1].role,lastMessageHasToolCalls:!!messages[messages.length-1].toolCalls},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
 
     // Execute tools
     const toolCallResults = [];
@@ -463,6 +469,9 @@ export class ZuckermanAwareness implements AgentRuntime {
           role: "tool" as const,
           content: resultContent,
         });
+        // #region agent log
+        fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runtime.ts:461',message:'Created tool result',data:{toolCallId:toolCall.id,toolName:toolCall.name,resultLength:resultContent.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         toolCallResults.push({
@@ -472,16 +481,23 @@ export class ZuckermanAwareness implements AgentRuntime {
         });
       }
     }
-
+    // #region agent log
+    fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runtime.ts:476',message:'Before adding tool results to messages',data:{toolCallResultsCount:toolCallResults.length,toolCallResultIds:toolCallResults.map(r=>r.toolCallId),messagesLength:messages.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     // Add tool results to messages
     for (const result of toolCallResults) {
       messages.push(result);
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runtime.ts:479',message:'After adding tool results',data:{messagesLength:messages.length,lastFewRoles:messages.slice(-5).map(m=>m.role)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,E'})}).catch(()=>{});
+    // #endregion
 
     // Run LLM again with tool results
     const config = await loadConfig();
     const provider = await this.providerService.selectProvider(config);
-    
+    // #region agent log
+    fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runtime.ts:485',message:'Calling LLM with tool results',data:{providerName:provider.name,messagesLength:messages.length,messageRoles:messages.map(m=>m.role)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B'})}).catch(()=>{});
+    // #endregion
     const result = await this.callLLMWithStreaming({
       provider,
       messages,
@@ -494,6 +510,9 @@ export class ZuckermanAwareness implements AgentRuntime {
 
     // Handle nested tool calls (recursive)
     if (result.toolCalls && result.toolCalls.length > 0) {
+      // #region agent log
+      fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runtime.ts:496',message:'Recursive handleToolCalls',data:{messagesLength:messages.length,newToolCallsCount:result.toolCalls.length,newToolCallIds:result.toolCalls.map(tc=>tc.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
       return await this.handleToolCalls({
         sessionId,
         runId,

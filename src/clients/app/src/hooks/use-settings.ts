@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { GatewayClient } from "../core/gateway/client";
 import { clearStorageByPrefix } from "../core/storage/local-storage";
+import { useLLMProvider, type LLMModel } from "./use-llm-provider";
 
 export interface SettingsState {
   gateway: {
@@ -26,10 +27,8 @@ export interface ToolRestrictions {
   enabledTools: Set<string>;
 }
 
-export interface LLMModel {
-  id: string;
-  name: string;
-}
+// LLMModel is now exported from use-llm-provider
+export type { LLMModel } from "./use-llm-provider";
 
 export interface UseSettingsReturn {
   // State
@@ -104,7 +103,6 @@ export function useSettings(
   });
 
   const [hasChanges, setHasChanges] = useState(false);
-  const [testingApiKey, setTestingApiKey] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
@@ -113,10 +111,6 @@ export function useSettings(
     enabledTools: new Set(["terminal", "browser", "cron", "device", "filesystem", "canvas"]),
   });
   const [isLoadingTools, setIsLoadingTools] = useState(false);
-  const [availableModels, setAvailableModels] = useState<LLMModel[]>([]);
-  const [isLoadingModels, setIsLoadingModels] = useState(false);
-  const justFetchedModelsRef = useRef(false);
-  const fetchingModelsRef = useRef(false);
 
   // Load API keys from Electron API on mount
   useEffect(() => {
@@ -301,6 +295,19 @@ export function useSettings(
     setHasChanges(true);
   }, []);
 
+  // Use shared LLM provider hook
+  const llmProviderHook = useLLMProvider({
+    gatewayClient,
+    provider: settings.llmProvider.provider,
+    apiKey: settings.llmProvider.apiKey,
+    validated: settings.llmProvider.validated,
+    model: settings.llmProvider.model,
+    onUpdate: (updates) => {
+      updateSettings("llmProvider", updates);
+    },
+    autoFetchModels: true,
+  });
+
   const saveSettings = useCallback(async () => {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
 
@@ -344,8 +351,8 @@ export function useSettings(
         
         if (!selectedModel) {
           // Try to use first available model from already fetched models
-          if (availableModels.length > 0) {
-            selectedModel = availableModels[0];
+          if (llmProviderHook.availableModels.length > 0) {
+            selectedModel = llmProviderHook.availableModels[0];
             console.log(`[Settings] Using first available model:`, selectedModel);
           } else {
             // Fetch models from gateway to get the first available model
@@ -409,7 +416,7 @@ export function useSettings(
     }
 
     setHasChanges(false);
-  }, [settings, availableModels, gatewayClient]);
+  }, [settings, llmProviderHook.availableModels, gatewayClient]);
 
   const testConnection = useCallback(async () => {
     setConnectionStatus("testing");
@@ -435,177 +442,9 @@ export function useSettings(
     }
   }, [settings.gateway.host, settings.gateway.port]);
 
-  const validateApiKey = useCallback((key: string, provider: string): boolean => {
-    if (provider === "anthropic") {
-      return key.startsWith("sk-ant-");
-    } else if (provider === "openai") {
-      return key.startsWith("sk-");
-    } else if (provider === "openrouter") {
-      return key.startsWith("sk-or-");
-    }
-    return false;
-  }, []);
-
-  const testApiKey = useCallback(async () => {
-    if (!settings.llmProvider.provider || !settings.llmProvider.apiKey) return;
-
-    if (settings.llmProvider.provider === "mock") {
-      updateSettings("llmProvider", { validated: true });
-      return;
-    }
-
-    if (!validateApiKey(settings.llmProvider.apiKey, settings.llmProvider.provider)) {
-      updateSettings("llmProvider", {
-        validated: false,
-        error: "Invalid API key format",
-      });
-      return;
-    }
-
-    setTestingApiKey(true);
-    updateSettings("llmProvider", { error: undefined });
-
-    try {
-      // Test the API key format (basic validation)
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Save API key after successful test
-      if (window.electronAPI) {
-        const keys: { anthropic?: string; openai?: string; openrouter?: string } = {};
-        if (settings.llmProvider.provider === "anthropic") {
-          keys.anthropic = settings.llmProvider.apiKey.trim();
-        } else if (settings.llmProvider.provider === "openai") {
-          keys.openai = settings.llmProvider.apiKey.trim();
-        } else if (settings.llmProvider.provider === "openrouter") {
-          keys.openrouter = settings.llmProvider.apiKey.trim();
-        }
-
-        const result = await window.electronAPI.saveApiKeys(keys);
-        if (!result.success) {
-          throw new Error(result.error || "Failed to save API key");
-        }
-
-        // Wait a bit for config to reload in gateway
-        await new Promise((resolve) => setTimeout(resolve, 300));
-      }
-
-      // Fetch models after saving API key
-      if (gatewayClient?.isConnected()) {
-        setIsLoadingModels(true);
-        justFetchedModelsRef.current = true;
-        try {
-          const response = await gatewayClient.request("llm.models", {
-            provider: settings.llmProvider.provider,
-          });
-
-          if (response.ok && response.result) {
-            const models = (response.result as { models: LLMModel[] }).models;
-            if (models && models.length > 0) {
-              setAvailableModels(models);
-              // Set first model as default if none selected
-              if (!settings.llmProvider.model) {
-                updateSettings("llmProvider", { model: models[0] });
-              }
-            } else {
-              setAvailableModels([]);
-            }
-          } else {
-            throw new Error(response.error?.message || "Failed to fetch models");
-          }
-        } catch (error) {
-          console.error("Failed to fetch models:", error);
-          throw new Error(error instanceof Error ? error.message : "Failed to fetch models");
-        } finally {
-          setIsLoadingModels(false);
-          // Reset flag after a short delay to allow useEffect to see it
-          setTimeout(() => {
-            justFetchedModelsRef.current = false;
-          }, 100);
-        }
-      }
-
-      updateSettings("llmProvider", {
-        validated: true,
-        error: undefined,
-      });
-    } catch (error: any) {
-      updateSettings("llmProvider", {
-        validated: false,
-        error: error.message || "API key validation failed",
-      });
-      setAvailableModels([]);
-    } finally {
-      setTestingApiKey(false);
-    }
-  }, [settings.llmProvider.provider, settings.llmProvider.apiKey, settings.llmProvider.model, validateApiKey, updateSettings, gatewayClient]);
-
-  // Fetch models when provider changes (if already validated)
-  // Note: testApiKey handles fetching after testing, so we skip if we just fetched
-  useEffect(() => {
-    const fetchModels = async () => {
-      // Skip if we just fetched models from testApiKey
-      if (justFetchedModelsRef.current) {
-        return;
-      }
-
-      // Skip if already fetching
-      if (fetchingModelsRef.current) {
-        return;
-      }
-
-      if (!gatewayClient?.isConnected() || !settings.llmProvider.provider || settings.llmProvider.provider === "mock") {
-        setAvailableModels([]);
-        return;
-      }
-
-      // Only fetch if we have a validated API key
-      if (!settings.llmProvider.validated) {
-        setAvailableModels([]);
-        return;
-      }
-
-      // For OpenRouter, we need an API key to fetch models
-      if (settings.llmProvider.provider === "openrouter" && !settings.llmProvider.apiKey) {
-        setAvailableModels([]);
-        return;
-      }
-
-      fetchingModelsRef.current = true;
-      setIsLoadingModels(true);
-      try {
-        const response = await gatewayClient.request("llm.models", {
-          provider: settings.llmProvider.provider,
-        });
-
-        if (response.ok && response.result) {
-          const models = (response.result as { models: LLMModel[] }).models;
-          setAvailableModels(models || []);
-
-          // Set default model if not already set - use setSettings directly to avoid triggering updateSettings callback
-          if (!settings.llmProvider.model && models && models.length > 0) {
-            setSettings((prev) => ({
-              ...prev,
-              llmProvider: {
-                ...prev.llmProvider,
-                model: models[0],
-              },
-            }));
-          }
-        } else {
-          setAvailableModels([]);
-        }
-      } catch (error) {
-        console.error("Failed to fetch models:", error);
-        setAvailableModels([]);
-      } finally {
-        setIsLoadingModels(false);
-        fetchingModelsRef.current = false;
-      }
-    };
-
-    fetchModels();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gatewayClient?.isConnected(), settings.llmProvider.provider, settings.llmProvider.apiKey, settings.llmProvider.validated]);
+  // Use shared hook's validation and test functions
+  const validateApiKey = llmProviderHook.validateApiKey;
+  const testApiKey = llmProviderHook.testApiKey;
 
   // Load model from config on mount
   useEffect(() => {
@@ -626,7 +465,7 @@ export function useSettings(
             let modelObj: LLMModel;
             if (typeof modelFromConfig === "string") {
               // Old format: just ID string, try to find full object from available models
-              modelObj = availableModels.find(m => m.id === modelFromConfig) || { id: modelFromConfig, name: modelFromConfig };
+              modelObj = llmProviderHook.availableModels.find(m => m.id === modelFromConfig) || { id: modelFromConfig, name: modelFromConfig };
             } else if (typeof modelFromConfig === "object" && modelFromConfig.id) {
               // New format: full object - extract only needed fields
               modelObj = {
@@ -650,10 +489,10 @@ export function useSettings(
       }
     };
 
-    if (gatewayClient?.isConnected() && settings.llmProvider.provider && availableModels.length > 0) {
+    if (gatewayClient?.isConnected() && settings.llmProvider.provider && llmProviderHook.availableModels.length > 0) {
       loadModelFromConfig();
     }
-  }, [gatewayClient?.isConnected(), settings.llmProvider.provider, availableModels]);
+  }, [gatewayClient?.isConnected(), settings.llmProvider.provider, llmProviderHook.availableModels, updateSettings]);
 
   const handleProviderChange = useCallback((provider: "anthropic" | "openai" | "openrouter" | "mock") => {
     updateSettings("llmProvider", {
@@ -663,7 +502,6 @@ export function useSettings(
       error: undefined,
       model: undefined,
     });
-    setAvailableModels([]);
   }, [updateSettings]);
 
   const handleModelChange = useCallback((model: LLMModel) => {
@@ -798,14 +636,14 @@ export function useSettings(
   return {
     settings,
     hasChanges,
-    testingApiKey,
+    testingApiKey: llmProviderHook.testingApiKey,
     connectionStatus,
     toolRestrictions,
     isLoadingTools,
     showResetDialog,
     isResetting,
-    availableModels,
-    isLoadingModels,
+    availableModels: llmProviderHook.availableModels,
+    isLoadingModels: llmProviderHook.isLoadingModels,
     updateSettings,
     saveSettings,
     testConnection,

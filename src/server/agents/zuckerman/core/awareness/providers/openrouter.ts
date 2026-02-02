@@ -186,6 +186,16 @@ export class OpenRouterProvider implements LLMProvider {
       return `Model '${modelId}' is not supported on OpenRouter. ${errorMessage}. Please check https://openrouter.ai/models for available models. Make sure you're using the exact model ID from OpenRouter, not a display name.`;
     }
 
+    // Type validation errors (e.g., content format issues)
+    if (
+      errorMessage.includes("Type validation failed") ||
+      errorMessage.includes("invalid_type") ||
+      errorMessage.includes("expected string") ||
+      errorMessage.includes("received array")
+    ) {
+      return `OpenRouter API validation error: ${errorMessage}. This may be due to a message format issue. Please ensure you're using a valid model ID from https://openrouter.ai/models.`;
+    }
+
     return errorMessage;
   }
 
@@ -194,12 +204,40 @@ export class OpenRouterProvider implements LLMProvider {
     systemPrompt?: string
   ): ModelMessage[] {
     const aiMessages: ModelMessage[] = [];
+    // Map toolCallId to toolName from previous assistant messages
+    const toolCallMap = new Map<string, string>();
 
     if (systemPrompt) {
       aiMessages.push({ role: "system", content: systemPrompt });
     }
 
+    // First pass: build tool call map
     for (const msg of messages) {
+      if (msg.role === "assistant" && msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          toolCallMap.set(tc.id, tc.name);
+        }
+      }
+    }
+
+    // Second pass: convert messages
+    // IMPORTANT: The Vercel AI SDK has a known issue (#8216) where it validates tool results
+    // against tool calls from the CURRENT API call, not from previous turns in conversation history.
+    // To work around this, we skip tool calls and tool results from previous turns and only
+    // include the final assistant response text. Tool calls/results from the current turn
+    // are handled separately in handleToolCalls.
+    
+    // Find the last assistant message - this is likely the one with tool calls from current turn
+    let lastAssistantIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") {
+        lastAssistantIndex = i;
+        break;
+      }
+    }
+    
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
       if (msg.role === "system") {
         continue; // Already handled above
       }
@@ -209,18 +247,35 @@ export class OpenRouterProvider implements LLMProvider {
           console.warn("Skipping invalid tool message (missing toolCallId)");
           continue;
         }
-        aiMessages.push({
-          role: "tool",
-          content: [
-            {
-              type: "tool-result",
-              toolCallId: msg.toolCallId,
-              result: msg.content || "",
-            } as any,
-          ],
-        });
+        // Only include tool results if they're for the last assistant message (current turn)
+        // Skip tool results from previous turns to avoid SDK validation errors
+        if (i === lastAssistantIndex + 1 && lastAssistantIndex >= 0) {
+          const lastAssistantMsg = messages[lastAssistantIndex];
+          const toolName = toolCallMap.get(msg.toolCallId);
+          const isForLastAssistant = lastAssistantMsg.toolCalls?.some(tc => tc.id === msg.toolCallId);
+          
+          if (toolName && isForLastAssistant) {
+            aiMessages.push({
+              role: "tool",
+              content: [
+                {
+                  type: "tool-result",
+                  toolCallId: msg.toolCallId,
+                  toolName,
+                  output: {
+                    type: "text",
+                    value: msg.content || "",
+                  },
+                } as any,
+              ],
+            } as ModelMessage);
+          }
+        }
+        // Skip tool results from previous turns
+        continue;
       } else if (msg.role === "assistant") {
-        if (msg.toolCalls?.length) {
+        if (i === lastAssistantIndex && msg.toolCalls?.length) {
+          // This is the last assistant message - include it with tool calls if present
           aiMessages.push({
             role: "assistant",
             content: msg.content || "",
@@ -231,6 +286,8 @@ export class OpenRouterProvider implements LLMProvider {
             })),
           } as ModelMessage);
         } else {
+          // Previous assistant messages - only include text content, skip tool calls
+          // This avoids SDK validation errors for tool calls from previous turns
           aiMessages.push({
             role: "assistant",
             content: msg.content || "",

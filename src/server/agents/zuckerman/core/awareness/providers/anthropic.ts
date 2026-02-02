@@ -120,6 +120,8 @@ export class AnthropicProvider implements LLMProvider {
     systemPrompt?: string
   ): ModelMessage[] {
     const aiMessages: ModelMessage[] = [];
+    // Map toolCallId to toolName from previous assistant messages
+    const toolCallMap = new Map<string, string>();
 
     if (systemPrompt) {
       aiMessages.push({
@@ -128,7 +130,33 @@ export class AnthropicProvider implements LLMProvider {
       });
     }
 
+    // First pass: build tool call map
     for (const msg of messages) {
+      if (msg.role === "assistant" && msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          toolCallMap.set(tc.id, tc.name);
+        }
+      }
+    }
+
+    // Second pass: convert messages
+    // IMPORTANT: The Vercel AI SDK has a known issue (#8216) where it validates tool results
+    // against tool calls from the CURRENT API call, not from previous turns in conversation history.
+    // To work around this, we skip tool calls and tool results from previous turns and only
+    // include the final assistant response text. Tool calls/results from the current turn
+    // are handled separately in handleToolCalls.
+    
+    // Find the last assistant message - this is likely the one with tool calls from current turn
+    let lastAssistantIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") {
+        lastAssistantIndex = i;
+        break;
+      }
+    }
+    
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
       // Skip invalid tool messages
       if (msg.role === "tool" && !msg.toolCallId) {
         console.warn("Skipping invalid tool message (missing toolCallId):", {
@@ -143,20 +171,35 @@ export class AnthropicProvider implements LLMProvider {
       }
 
       if (msg.role === "tool" && msg.toolCallId) {
-        aiMessages.push({
-          role: "tool",
-          content: [
-            {
-              type: "tool-result",
-              toolCallId: msg.toolCallId,
-              result: msg.content || "",
-            } as any,
-          ],
-        });
+        // Only include tool results if they're for the last assistant message (current turn)
+        // Skip tool results from previous turns to avoid SDK validation errors
+        if (i === lastAssistantIndex + 1 && lastAssistantIndex >= 0) {
+          const lastAssistantMsg = messages[lastAssistantIndex];
+          const toolName = toolCallMap.get(msg.toolCallId);
+          const isForLastAssistant = lastAssistantMsg.toolCalls?.some(tc => tc.id === msg.toolCallId);
+          
+          if (toolName && isForLastAssistant) {
+            aiMessages.push({
+              role: "tool",
+              content: [
+                {
+                  type: "tool-result",
+                  toolCallId: msg.toolCallId,
+                  toolName,
+                  output: {
+                    type: "text",
+                    value: msg.content || "",
+                  },
+                } as any,
+              ],
+            });
+          }
+        }
+        // Skip tool results from previous turns
+        continue;
       } else if (msg.role === "assistant") {
-        // Assistant messages with tool calls need to be split into separate messages
-        // First add the assistant message with tool calls
-        if (msg.toolCalls && msg.toolCalls.length > 0) {
+        if (i === lastAssistantIndex && msg.toolCalls && msg.toolCalls.length > 0) {
+          // This is the last assistant message - include it with tool calls if present
           aiMessages.push({
             role: "assistant",
             content: msg.content || "",
@@ -167,6 +210,8 @@ export class AnthropicProvider implements LLMProvider {
             })),
           } as ModelMessage);
         } else {
+          // Previous assistant messages - only include text content, skip tool calls
+          // This avoids SDK validation errors for tool calls from previous turns
           aiMessages.push({
             role: "assistant",
             content: msg.content || "",
