@@ -232,9 +232,22 @@ export interface TextToSpeechConfig {
   };
 }
 
+export interface AgentConfig {
+  memoryFlush?: {
+    enabled?: boolean;
+    softThresholdTokens?: number;
+    prompt?: string;
+    systemPrompt?: string;
+    reserveTokensFloor?: number;
+  };
+  memorySearch?: unknown; // Memory search config (defined in memory/config.ts)
+  contextTokens?: number;
+}
+
 export interface ZuckermanConfig {
   gateway?: GatewayConfig;
   agents?: AgentsConfig; // Multi-agent config
+  agent?: AgentConfig; // Agent-specific config (memory, etc.)
   routing?: RoutingConfig; // Agent routing bindings
   channels?: ChannelsConfig; // Messaging channels config
   llm?: LLMConfig;

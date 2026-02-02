@@ -9,6 +9,7 @@ import { createWhatsAppTool } from "./channels/whatsapp.js";
 import { createTelegramTool } from "./channels/telegram.js";
 import { createDiscordTool } from "./channels/discord.js";
 import { createSignalTool } from "./channels/signal.js";
+import { createMemorySearchTool, createMemoryGetTool, createMemorySaveTool, createMemoryUpdateTool } from "./memory/index.js";
 
 export class ZuckermanToolRegistry {
   private tools = new Map<string, Tool>();
@@ -27,6 +28,10 @@ export class ZuckermanToolRegistry {
     this.register(createTelegramTool());
     this.register(createDiscordTool());
     this.register(createSignalTool());
+    this.register(createMemorySearchTool());
+    this.register(createMemoryGetTool());
+    this.register(createMemorySaveTool());
+    this.register(createMemoryUpdateTool());
     
     // Register batch tool with execution context
     this.registerBatchTool();

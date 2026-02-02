@@ -35,13 +35,13 @@ export class PromptLoader {
       files: new Map(),
     };
 
-    // Load core prompt files from bootstrap directory
-    const bootstrapDir = join(coreDir, "memory", "bootstrap");
+    // Load core prompt files from personality directory
+    const personalityDir = join(coreDir, "personality");
     const coreFiles = [
-      { path: join(bootstrapDir, "system.md"), key: "system" as const },
-      { path: join(bootstrapDir, "behavior.md"), key: "behavior" as const },
-      { path: join(bootstrapDir, "personality.md"), key: "personality" as const },
-      { path: join(bootstrapDir, "README.md"), key: "instructions" as const },
+      { path: join(personalityDir, "system.md"), key: "system" as const },
+      { path: join(personalityDir, "behavior.md"), key: "behavior" as const },
+      { path: join(personalityDir, "personality.md"), key: "personality" as const },
+      { path: join(personalityDir, "README.md"), key: "instructions" as const },
     ];
 
     for (const file of coreFiles) {
@@ -54,24 +54,27 @@ export class PromptLoader {
           console.warn(`[PromptLoader] Failed to load ${file.path}:`, err);
         }
       } else {
-        console.warn(`[PromptLoader] File not found: ${file.path} (agentDir: ${agentDir}, bootstrapDir: ${bootstrapDir})`);
+        console.warn(`[PromptLoader] File not found: ${file.path} (agentDir: ${agentDir}, personalityDir: ${personalityDir})`);
       }
     }
 
-    // Load all markdown files from bootstrap directory
+    // Load all remaining markdown files from personality directory (skip already loaded ones)
     try {
-      if (existsSync(bootstrapDir)) {
-        const files = await readdir(bootstrapDir);
+      if (existsSync(personalityDir)) {
+        const files = await readdir(personalityDir);
         for (const file of files) {
           if (file.endsWith(".md")) {
-            const filePath = join(bootstrapDir, file);
-            const content = await readFile(filePath, "utf-8");
-            prompts.files.set(filePath, content);
+            const filePath = join(personalityDir, file);
+            // Skip files that were already loaded in the coreFiles loop
+            if (!prompts.files.has(filePath)) {
+              const content = await readFile(filePath, "utf-8");
+              prompts.files.set(filePath, content);
+            }
           }
         }
       }
     } catch (err) {
-      console.warn(`Failed to load bootstrap directory files:`, err);
+      console.warn(`Failed to load personality directory files:`, err);
     }
 
     this.promptCache.set(agentDir, prompts);
@@ -88,7 +91,7 @@ export class PromptLoader {
       parts.push(`# System\n\n${prompts.system}`);
     }
 
-    // Collect all personality files from bootstrap directory
+    // Collect all personality files from personality directory
     const personalityFiles: Array<{ path: string; content: string }> = [];
     const personalityFileNames = ["personality.md", "traits.md", "motivations.md", "values.md", "fear.md", "joy.md"];
     for (const [filePath, content] of prompts.files.entries()) {

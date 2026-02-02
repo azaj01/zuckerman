@@ -71,6 +71,8 @@ export interface SessionEntry {
   temperatureOverride?: number;
   timeoutSecondsOverride?: number; // Per-session timeout override
   lastTranscriptId?: string; // Track last written transcript entry to prevent duplicates
+  memoryFlushCount?: number; // Track number of memory flushes for this session
+  memoryFlushAt?: number; // Timestamp of last memory flush
 }
 
 /**

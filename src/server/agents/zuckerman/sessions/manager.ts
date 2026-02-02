@@ -218,6 +218,42 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Update session entry with custom update function
+   */
+  async updateSessionEntry(
+    sessionId: SessionId,
+    updateFn: (entry: SessionEntry) => Partial<SessionEntry>,
+  ): Promise<SessionEntry | undefined> {
+    const state = this.sessions.get(sessionId);
+    if (!state) return undefined;
+
+    const store = loadSessionStore(this.storePath);
+    const sessionKey = deriveSessionKey(
+      this.agentId,
+      state.session.type,
+      state.session.label,
+    );
+
+    const entry = store[sessionKey];
+    if (entry) {
+      const updates = updateFn(entry);
+      Object.assign(entry, updates);
+      entry.updatedAt = Date.now();
+      await saveSessionStore(this.storePath, store);
+      return entry;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Get store path (for external access)
+   */
+  getStorePath(): string {
+    return this.storePath;
+  }
+
   createSession(
     label: SessionLabel,
     type: SessionType = "main",

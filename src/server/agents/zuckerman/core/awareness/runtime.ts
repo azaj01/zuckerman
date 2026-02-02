@@ -9,7 +9,7 @@ import type { ToolExecutionContext } from "@server/agents/zuckerman/tools/termin
 import { truncateOutput } from "@server/agents/zuckerman/tools/truncation.js";
 import { LLMProviderService } from "@server/agents/zuckerman/core/awareness/providers/service/selector.js";
 import { selectModel } from "@server/agents/zuckerman/core/awareness/providers/service/model-selector.js";
-import { PromptLoader, type LoadedPrompts } from "@server/agents/zuckerman/core/memory/loader.js";
+import { PromptLoader, type LoadedPrompts } from "../personality/personality-loader.js";
 import { agentDiscovery } from "@server/agents/discovery.js";
 import {
   resolveAgentLandDir,
@@ -17,7 +17,8 @@ import {
 import {
   loadMemoryForSession,
   formatMemoryForPrompt,
-} from "@server/agents/zuckerman/core/memory/persistence.js";
+} from "@server/agents/zuckerman/core/memory/storage/persistence.js";
+import { runMemoryFlushIfNeeded } from "@server/agents/zuckerman/core/memory/flush-runner.js";
 import { activityRecorder } from "@server/world/activity/index.js";
 
 export class ZuckermanAwareness implements AgentRuntime {
@@ -114,6 +115,19 @@ export class ZuckermanAwareness implements AgentRuntime {
 
       // Resolve land directory
       const landDir = resolveAgentLandDir(config, this.agentId);
+
+      // Check if memory flush is needed before processing the message
+      // This runs a special agent turn to save memories if context window is getting full
+      const modelForFlush = model || selectModel(provider, config);
+      await runMemoryFlushIfNeeded({
+        config,
+        runtime: this,
+        sessionManager: this.sessionManager,
+        sessionId,
+        modelId: modelForFlush?.id,
+        agentId: this.agentId,
+        landDir,
+      });
       
       // Load prompts
       const prompts = await this.loadPrompts();
