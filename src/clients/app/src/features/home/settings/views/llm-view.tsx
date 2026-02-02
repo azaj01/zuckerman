@@ -3,7 +3,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Loader2, CheckCircle2, AlertCircle, Eye, EyeOff } from "lucide-react";
+
+interface LLMModel {
+  id: string;
+  name: string;
+}
 
 interface LLMViewProps {
   llmProvider: {
@@ -11,18 +23,25 @@ interface LLMViewProps {
     apiKey: string;
     validated: boolean;
     error?: string;
+    model?: string;
   };
   testingApiKey: boolean;
+  availableModels: LLMModel[];
+  isLoadingModels: boolean;
   onProviderChange: (provider: "anthropic" | "openai" | "openrouter" | "mock") => void;
   onApiKeyChange: (apiKey: string) => void;
+  onModelChange: (model: string) => void;
   onTestApiKey: () => void;
 }
 
 export function LLMView({
   llmProvider,
   testingApiKey,
+  availableModels,
+  isLoadingModels,
   onProviderChange,
   onApiKeyChange,
+  onModelChange,
   onTestApiKey,
 }: LLMViewProps) {
   const [showApiKey, setShowApiKey] = useState(false);
@@ -173,6 +192,33 @@ export function LLMView({
                 </div>
               )}
             </div>
+
+            {availableModels.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="model-select" className="text-sm font-semibold text-foreground">
+                  Model
+                </Label>
+                <Select
+                  value={llmProvider.model || ""}
+                  onValueChange={onModelChange}
+                  disabled={isLoadingModels}
+                >
+                  <SelectTrigger id="model-select" className="w-full">
+                    <SelectValue placeholder={isLoadingModels ? "Loading models..." : "Select a model"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableModels.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.name} <span className="text-muted-foreground">({model.id})</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Choose the specific model to use for this provider.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

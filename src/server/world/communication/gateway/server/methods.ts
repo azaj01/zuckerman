@@ -50,7 +50,15 @@ export function createCoreHandlers(deps: CoreHandlersDeps): GatewayRequestHandle
   }
 
   for (const [key, handler] of Object.entries(configHandlers)) {
-    if (handler) handlers[key] = handler;
+    if (handler) {
+      handlers[key] = handler;
+    }
+  }
+  
+  // Debug: Log registered config handlers
+  const configHandlerKeys = Object.keys(configHandlers);
+  if (configHandlerKeys.length > 0) {
+    console.log(`[Gateway] Registered config handlers: ${configHandlerKeys.join(", ")}`);
   }
 
   for (const [key, handler] of Object.entries(textToSpeechHandlers)) {

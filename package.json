@@ -35,9 +35,12 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.35",
+    "@ai-sdk/openai": "^3.0.25",
     "@sinclair/typebox": "^0.34.47",
     "@slack/bolt": "^4.6.0",
     "@whiskeysockets/baileys": "^6.7.8",
+    "ai": "^6.0.67",
     "chokidar": "^5.0.0",
     "commander": "^12.1.0",
     "croner": "^9.1.0",

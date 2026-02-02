@@ -124,6 +124,28 @@ export async function initializeChannels(
   ) => {
     channel.onMessage(async (message) => {
       try {
+        // Check for session reset commands
+        const text = message.content.trim().toLowerCase();
+        if (text === "/reset" || text === "/new" || text === "/clear" || text === "/start") {
+          // Route to get session info
+          const route = await router.routeToAgent(message, {
+            accountId: "default",
+          });
+
+          // Get session manager for this agent
+          const sm = agentFactory.getSessionManager(route.agentId);
+          
+          // Delete existing session if it exists
+          const existingSession = sm.getSession(route.sessionId);
+          if (existingSession) {
+            sm.deleteSession(route.sessionId);
+          }
+
+          // Send confirmation message
+          await channel.send("✅ Session cleared! Starting fresh conversation.", message.from);
+          return;
+        }
+
         // Route message to agent
         const route = await router.routeToAgent(message, {
           accountId: "default",

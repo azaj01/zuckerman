@@ -54,11 +54,14 @@ export function SettingsView({
     isLoadingTools,
     showResetDialog,
     isResetting,
+    availableModels,
+    isLoadingModels,
     updateSettings,
     saveSettings,
     testConnection,
     testApiKey,
     handleProviderChange,
+    handleModelChange,
     handleToolToggle,
     handleEnableAllTools,
     handleReset,
@@ -170,6 +173,8 @@ export function SettingsView({
               <LLMView
                 llmProvider={settings.llmProvider}
                 testingApiKey={testingApiKey}
+                availableModels={availableModels}
+                isLoadingModels={isLoadingModels}
                 onProviderChange={handleProviderChange}
                 onApiKeyChange={(apiKey) =>
                   updateSettings("llmProvider", {
@@ -177,6 +182,7 @@ export function SettingsView({
                     validated: false,
                   })
                 }
+                onModelChange={handleModelChange}
                 onTestApiKey={testApiKey}
               />
             )}

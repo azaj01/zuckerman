@@ -251,40 +251,46 @@ async function loginWhatsApp(options: { json?: boolean } = {}): Promise<void> {
 
   const channel = new WhatsAppChannel(
     config.channels.whatsapp,
-    (qr) => {
-      // Handle QR code clearing (empty string means cleared)
+    (status) => {
+      // Handle QR code
+      const { status: connectionStatus, qr } = status;
+      
+      // Handle QR code clearing (empty string or null means cleared)
       if (!qr || qr.length === 0) {
         if (isJson) {
           outputJson({ event: "qr_cleared" }, options);
         }
-        return;
+      } else {
+        // QR code is available
+        if (isJson) {
+          outputJson({ event: "qr_code", qr }, options);
+        } else {
+          console.log("\n✅ QR Code generated! Scan it with WhatsApp.\n");
+          // Print QR code to terminal
+          const qrModule = qrcodeTerminal as any;
+          if (qrModule.default?.generate) {
+            qrModule.default.generate(qr, { small: true });
+          } else if (qrModule.generate) {
+            qrModule.generate(qr, { small: true });
+          } else {
+            console.log("QR Code:", qr);
+          }
+          console.log("\n");
+        }
       }
       
+      // Handle connection status
       if (isJson) {
-        outputJson({ event: "qr_code", qr }, options);
+        outputJson({ event: "connection_status", status: connectionStatus }, options);
       } else {
-        console.log("\n✅ QR Code generated! Scan it with WhatsApp.\n");
-        // Print QR code to terminal
-        const qrModule = qrcodeTerminal as any;
-        if (qrModule.default?.generate) {
-          qrModule.default.generate(qr, { small: true });
-        } else if (qrModule.generate) {
-          qrModule.generate(qr, { small: true });
-        } else {
-          console.log("QR Code:", qr);
-        }
-        console.log("\n");
-      }
-    },
-    (connected) => {
-      // Connection status callback
-      if (isJson) {
-        outputJson({ event: "connection_status", connected }, options);
-      } else {
-        if (connected) {
+        if (connectionStatus === "connected") {
           console.log("[WhatsApp] Connection status: Connected");
-        } else {
+        } else if (connectionStatus === "disconnected") {
           console.log("[WhatsApp] Connection status: Disconnected");
+        } else if (connectionStatus === "connecting") {
+          console.log("[WhatsApp] Connection status: Connecting...");
+        } else if (connectionStatus === "waiting_for_scan") {
+          console.log("[WhatsApp] Waiting for QR code scan...");
         }
       }
     }

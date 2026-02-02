@@ -1,15 +1,23 @@
+import { createOpenAI } from "@ai-sdk/openai";
+import { generateText, streamText, jsonSchema, type Tool, type ModelMessage } from "ai";
 import type { LLMProvider, LLMCallParams, LLMResponse, LLMMessage } from "./types.js";
 
+/**
+ * OpenAI provider using Vercel AI SDK
+ * This implementation automatically handles max_completion_tokens vs max_tokens
+ * and provides better error handling and streaming support
+ */
 export class OpenAIProvider implements LLMProvider {
   name = "openai";
-  private apiKey: string;
-  private baseUrl = "https://api.openai.com/v1/chat/completions";
+  private openai: ReturnType<typeof createOpenAI>;
 
   constructor(apiKey: string) {
     if (!apiKey) {
       throw new Error("OpenAI API key is required");
     }
-    this.apiKey = apiKey;
+    this.openai = createOpenAI({
+      apiKey,
+    });
   }
 
   async call(params: LLMCallParams): Promise<LLMResponse> {
@@ -22,79 +30,49 @@ export class OpenAIProvider implements LLMProvider {
       tools,
     } = params;
 
-    const openaiMessages = this.formatMessages(messages, systemPrompt);
+    // Convert messages to AI SDK format
+    const aiMessages = this.convertMessages(messages, systemPrompt);
 
-    const body: Record<string, unknown> = {
-      model,
-      messages: openaiMessages,
-      temperature,
-      max_tokens: maxTokens,
-    };
-
-    // Add tools if provided
-    if (tools && tools.length > 0) {
-      body.tools = tools.map((tool) => ({
-        type: "function",
-        function: tool.function,
-      }));
-    }
-
-    const response = await fetch(this.baseUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenAI API error: ${response.status} ${errorText}`);
-    }
-
-    const data = (await response.json()) as {
-      choices: Array<{
-        message?: {
-          content: string | null;
-          tool_calls?: Array<{
-            id: string;
-            type: string;
-            function: { name: string; arguments: string };
-          }>;
-        };
-        delta?: { content: string };
-        finish_reason?: string;
-      }>;
-      usage?: {
-        prompt_tokens: number;
-        completion_tokens: number;
-        total_tokens: number;
+    // Convert tools to AI SDK ToolSet format
+    const toolSet = tools?.reduce((acc, tool) => {
+      acc[tool.function.name] = {
+        description: tool.function.description,
+        inputSchema: jsonSchema(tool.function.parameters as Record<string, unknown>),
       };
-      model?: string;
-    };
+      return acc;
+    }, {} as Record<string, Tool>);
 
-    const message = data.choices[0]?.message;
-    const content = message?.content || "";
-    const toolCalls = message?.tool_calls?.map((tc) => ({
-      id: tc.id,
-      name: tc.function.name,
-      arguments: tc.function.arguments,
-    }));
+    try {
+      const result = await generateText({
+        model: this.openai(model),
+        messages: aiMessages,
+        temperature,
+        maxTokens: maxTokens,
+        tools: toolSet,
+      } as Parameters<typeof generateText>[0]);
 
-    return {
-      content,
-      tokensUsed: data.usage
-        ? {
-            input: data.usage.prompt_tokens,
-            output: data.usage.completion_tokens,
-            total: data.usage.total_tokens,
-          }
-        : undefined,
-      model: data.model,
-      finishReason: data.choices[0]?.finish_reason,
-      toolCalls,
-    };
+      return {
+        content: result.text,
+        tokensUsed: result.usage
+          ? {
+              input: result.usage.inputTokens ?? 0,
+              output: result.usage.outputTokens ?? 0,
+              total: result.usage.totalTokens ?? 0,
+            }
+          : undefined,
+        model: result.response?.modelId ?? model,
+        finishReason: result.finishReason,
+        toolCalls: result.toolCalls?.map((tc) => ({
+          id: tc.toolCallId,
+          name: tc.toolName,
+          arguments: JSON.stringify("input" in tc ? tc.input : {}),
+        })),
+      };
+    } catch (error) {
+      throw new Error(
+        `OpenAI API error: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   async *stream(params: LLMCallParams): AsyncIterable<string> {
@@ -104,120 +82,106 @@ export class OpenAIProvider implements LLMProvider {
       temperature = 1.0,
       maxTokens = 4096,
       model = "gpt-4o",
+      tools,
     } = params;
 
-    const openaiMessages = this.formatMessages(messages, systemPrompt);
+    // Convert messages to AI SDK format
+    const aiMessages = this.convertMessages(messages, systemPrompt);
 
-    const response = await fetch(this.baseUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: openaiMessages,
+    // Convert tools to AI SDK ToolSet format
+    const toolSet = tools?.reduce((acc, tool) => {
+      acc[tool.function.name] = {
+        description: tool.function.description,
+        inputSchema: jsonSchema(tool.function.parameters as Record<string, unknown>),
+      };
+      return acc;
+    }, {} as Record<string, Tool>);
+
+    try {
+      const result = await streamText({
+        model: this.openai(model),
+        messages: aiMessages,
         temperature,
-        max_tokens: maxTokens,
-        stream: true,
-      }),
-    });
+        maxTokens: maxTokens,
+        tools: toolSet,
+      } as Parameters<typeof streamText>[0]);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenAI API error: ${response.status} ${errorText}`);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error("No response body");
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = line.slice(6);
-          if (data === "[DONE]") continue;
-
-          try {
-            const parsed = JSON.parse(data) as {
-              choices?: Array<{ delta?: { content?: string } }>;
-            };
-
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              yield content;
-            }
-          } catch {
-            // Skip invalid JSON
-          }
-        }
+      for await (const chunk of result.textStream) {
+        yield chunk;
       }
+    } catch (error) {
+      throw new Error(
+        `OpenAI API error: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
-  private formatMessages(messages: LLMMessage[], systemPrompt?: string): any[] {
-    const openaiMessages: any[] = [];
+  private convertMessages(
+    messages: LLMMessage[],
+    systemPrompt?: string
+  ): ModelMessage[] {
+    const aiMessages: ModelMessage[] = [];
 
     if (systemPrompt) {
-      openaiMessages.push({
+      aiMessages.push({
         role: "system",
         content: systemPrompt,
       });
     }
 
     for (const msg of messages) {
-      // CRITICAL: Skip tool messages without valid toolCallId (invalid state - these cannot be sent to API)
-      const hasToolCallId = msg.toolCallId && typeof msg.toolCallId === "string" && msg.toolCallId.trim().length > 0;
-      
-      if (msg.role === "tool" && !hasToolCallId) {
+      // Skip invalid tool messages
+      if (msg.role === "tool" && !msg.toolCallId) {
         console.warn("Skipping invalid tool message (missing toolCallId):", {
           content: msg.content.substring(0, 100),
         });
         continue;
       }
 
-      const openaiMsg: any = {
-        role: msg.role,
-        content: msg.content || null,
-      };
-
-      // Handle tool calls in assistant messages
-      if (msg.toolCalls && msg.toolCalls.length > 0) {
-        openaiMsg.tool_calls = msg.toolCalls.map((tc) => ({
-          id: tc.id,
-          type: "function",
-          function: {
-            name: tc.name,
-            arguments: tc.arguments,
-          },
-        }));
-      }
-
-      // Handle tool results - ensure tool_call_id is set for tool role messages
-      if (msg.role === "tool" || hasToolCallId) {
-        openaiMsg.role = "tool";
-        openaiMsg.tool_call_id = msg.toolCallId!;
-      }
-
-      // Final validation
-      if (openaiMsg.role === "tool" && !openaiMsg.tool_call_id) {
+      if (msg.role === "system") {
+        // System messages are handled separately
         continue;
       }
 
-      openaiMessages.push(openaiMsg);
+      if (msg.role === "tool" && msg.toolCallId) {
+        aiMessages.push({
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: msg.toolCallId,
+              result: msg.content || "",
+            } as any,
+          ],
+        });
+      } else if (msg.role === "assistant") {
+        // Assistant messages with tool calls need to be split into separate messages
+        // First add the assistant message with tool calls
+        if (msg.toolCalls && msg.toolCalls.length > 0) {
+          aiMessages.push({
+            role: "assistant",
+            content: msg.content || "",
+            toolCalls: msg.toolCalls.map((tc) => ({
+              toolCallId: tc.id,
+              toolName: tc.name,
+              args: JSON.parse(tc.arguments),
+            })),
+          } as ModelMessage);
+        } else {
+          aiMessages.push({
+            role: "assistant",
+            content: msg.content || "",
+          });
+        }
+      } else {
+        // user role
+        aiMessages.push({
+          role: "user",
+          content: msg.content || "",
+        });
+      }
     }
 
-    return openaiMessages;
+    return aiMessages;
   }
 }
