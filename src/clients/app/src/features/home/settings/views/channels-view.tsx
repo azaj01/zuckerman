@@ -79,9 +79,9 @@ export function ChannelsView({ gatewayClient }: ChannelsViewProps) {
 
   // Use hooks for WhatsApp, Telegram, Discord, and Signal
   const whatsapp = useWhatsAppChannel(gatewayClient, { enabled: true });
-  const telegram = useTelegramChannel(gatewayClient, { enabled: true });
-  const discord = useDiscordChannel(gatewayClient, { enabled: true });
-  const signal = useSignalChannel(gatewayClient, { enabled: true });
+  const telegram = useTelegramChannel({ enabled: true });
+  const discord = useDiscordChannel({ enabled: true });
+  const signal = useSignalChannel({ enabled: true });
   
   // Refs for managing timers (for channels without hooks)
   const qrTimeoutRefs = React.useRef<Record<string, NodeJS.Timeout | null>>({});

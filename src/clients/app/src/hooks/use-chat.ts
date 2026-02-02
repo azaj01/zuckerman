@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { GatewayClient } from "../core/gateway/client";
 import type { Session, SessionType } from "../types/session";
 import type { Message } from "../types/message";
 import { useSessionService, useMessageService, useAgentService } from "../core/gateway/use-services";
@@ -33,19 +32,16 @@ export interface UseChatReturn {
  * - Session management
  * - Active sessions UI state
  * - Message loading and sending
+ * Uses gateway client from context (no props needed)
  */
 export function useChat(
-  gatewayClient: GatewayClient | null,
   currentAgentId: string | null,
   agentId: string | null
 ): UseChatReturn {
-  const { gatewayClient: contextClient } = useGatewayContext();
+  const { gatewayClient, connectionStatus } = useGatewayContext();
   const sessionService = useSessionService();
   const messageService = useMessageService();
   const agentService = useAgentService();
-
-  // Use gatewayClient from context if not provided (for backward compatibility)
-  const effectiveClient = gatewayClient || contextClient;
 
   // Sessions state
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -95,7 +91,7 @@ export function useChat(
   // Session management
   const createSession = useCallback(
     async (type: SessionType, agentId: string, label?: string): Promise<Session> => {
-      if (!effectiveClient?.isConnected() || !sessionService) {
+      if (connectionStatus !== "connected" || !sessionService) {
         throw new Error("Gateway not connected");
       }
 
@@ -104,11 +100,11 @@ export function useChat(
       setCurrentSessionId(newSession.id);
       return newSession;
     },
-    [effectiveClient, sessionService]
+    [connectionStatus, sessionService]
   );
 
   const loadSessions = useCallback(async () => {
-    if (!effectiveClient?.isConnected() || !sessionService) {
+    if (connectionStatus !== "connected" || !sessionService) {
       return;
     }
 
@@ -122,15 +118,20 @@ export function useChat(
     } catch (error) {
       console.error("Failed to load sessions:", error);
     }
-  }, [effectiveClient, sessionService, currentSessionId]);
+  }, [connectionStatus, sessionService, currentSessionId]);
 
+  // React to connection status changes
   useEffect(() => {
-    if (effectiveClient?.isConnected() && currentAgentId) {
+    if (connectionStatus === "connected" && currentAgentId) {
       loadSessions();
-    } else if (effectiveClient?.isConnected() && !currentAgentId && sessions.length === 0) {
+    } else if (connectionStatus === "connected" && !currentAgentId && sessions.length === 0) {
       loadSessions();
+    } else if (connectionStatus === "disconnected") {
+      // Clear sessions when disconnected
+      setSessions([]);
+      setCurrentSessionId(null);
     }
-  }, [effectiveClient, currentAgentId, loadSessions, sessions.length]);
+  }, [connectionStatus, currentAgentId, loadSessions, sessions.length]);
 
   // Active sessions management
   const addToActiveSessions = useCallback((sessionId: string) => {
@@ -154,7 +155,7 @@ export function useChat(
   // Message management
   const loadMessages = useCallback(async () => {
     const currentSession = currentSessionId || currentSessionIdRef.current;
-    if (!currentSession || !effectiveClient?.isConnected() || !messageService) {
+    if (!currentSession || connectionStatus !== "connected" || !messageService) {
       setMessages([]);
       return;
     }
@@ -199,7 +200,7 @@ export function useChat(
         lastMessageCountRef.current = 0;
       }
     }
-  }, [effectiveClient, messageService, currentSessionId]);
+  }, [connectionStatus, messageService, currentSessionId]);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -213,7 +214,7 @@ export function useChat(
 
     pollingRef.current = setInterval(async () => {
       const currentSession = currentSessionIdRef.current;
-      if (!currentSession || !effectiveClient?.isConnected() || !sessionService) {
+      if (!currentSession || connectionStatus !== "connected" || !sessionService) {
         return;
       }
 
@@ -240,7 +241,7 @@ export function useChat(
         }
       }
     }, 5000);
-  }, [effectiveClient, sessionService, loadMessages, isSending, stopPolling]);
+  }, [connectionStatus, sessionService, loadMessages, isSending, stopPolling]);
 
   useEffect(() => {
     if (!isSending && currentSessionId) {
@@ -253,7 +254,7 @@ export function useChat(
 
   // Streaming event listener
   useEffect(() => {
-    if (!effectiveClient) return;
+    if (!gatewayClient) return;
 
     const handleStreamEvent = (event: { event: string; payload?: unknown }) => {
       if (!event.event.startsWith("agent.stream.")) return;
@@ -396,14 +397,14 @@ export function useChat(
       }
     };
 
-    const removeListener = effectiveClient.addEventListener(handleStreamEvent);
+    const removeListener = gatewayClient.addEventListener(handleStreamEvent);
     return () => {
       removeListener();
     };
-  }, [effectiveClient, loadMessages]);
+  }, [gatewayClient, loadMessages]);
 
   useEffect(() => {
-    if (effectiveClient?.isConnected() && currentSessionId) {
+    if (connectionStatus === "connected" && currentSessionId) {
       startPolling();
     } else {
       stopPolling();
@@ -412,15 +413,15 @@ export function useChat(
     return () => {
       stopPolling();
     };
-  }, [effectiveClient, currentSessionId, startPolling, stopPolling]);
+  }, [connectionStatus, currentSessionId, startPolling, stopPolling]);
 
   const sendMessage = useCallback(
     async (messageText: string) => {
-      if (!effectiveClient || !messageService || !agentService || !sessionService) {
+      if (!gatewayClient || !messageService || !agentService || !sessionService) {
         throw new Error("Services not initialized");
       }
 
-      if (!effectiveClient.isConnected()) {
+      if (connectionStatus !== "connected") {
         throw new Error("Gateway not connected");
       }
 
@@ -459,8 +460,17 @@ export function useChat(
       setMessages((prev) => [...prev, thinkingMessage]);
 
       try {
-        console.log(`[useChat] Sending message with agentId: "${currentAgentId}", sessionId: "${currentSessionId}"`);
-        await messageService.sendMessage(currentSessionId, currentAgentId, messageText);
+        // Ensure we have valid IDs (they should be set above, but TypeScript needs this)
+        if (!currentSessionId || !currentAgentId) {
+          throw new Error("Session or agent ID is missing");
+        }
+
+        // TypeScript narrowing - assign to const to ensure types
+        const sessionId: string = currentSessionId;
+        const agentId: string = currentAgentId;
+
+        console.log(`[useChat] Sending message with agentId: "${agentId}", sessionId: "${sessionId}"`);
+        await messageService.sendMessage(sessionId, agentId, messageText);
 
         let attempts = 0;
         const pollInterval = 300;
@@ -471,11 +481,11 @@ export function useChat(
               attempts++;
 
               try {
-                if (!effectiveClient?.isConnected()) {
+                if (connectionStatus !== "connected") {
                   return;
                 }
 
-                const loadedMessages = await messageService.loadMessages(currentSessionId);
+                const loadedMessages = await messageService.loadMessages(sessionId);
                 const deduplicated = messageService.deduplicateMessages(loadedMessages);
 
                 const hasResponse = deduplicated.some((msg) => {
@@ -529,7 +539,7 @@ export function useChat(
         throw new Error(`Failed to send message: ${errorMessage}`);
       }
     },
-    [effectiveClient, messageService, agentService, sessionService, agentId, loadMessages]
+    [gatewayClient, connectionStatus, messageService, agentService, sessionService, agentId, loadMessages]
   );
 
   useEffect(() => {

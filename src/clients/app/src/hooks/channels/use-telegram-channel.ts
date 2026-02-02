@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import type { GatewayClient } from "../../core/gateway/client";
 import { useTelegramService } from "../../core/gateway/use-services";
 import { useGatewayContext } from "../../core/gateway/use-gateway-context";
 import type { TelegramConfig } from "../../core/channels/types";
@@ -22,17 +21,13 @@ export interface UseTelegramChannelReturn {
 
 /**
  * Hook for managing Telegram channel connection and configuration
+ * Uses gateway client from context
  */
 export function useTelegramChannel(
-  gatewayClient: GatewayClient | null,
   options?: { enabled?: boolean }
 ): UseTelegramChannelReturn {
-  const { gatewayClient: contextClient } = useGatewayContext();
+  const { gatewayClient, connectionStatus } = useGatewayContext();
   const telegramService = useTelegramService();
-
-  // Use gatewayClient from context if not provided (for backward compatibility)
-  const effectiveClient = gatewayClient || contextClient;
-  const service = telegramService;
 
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -45,7 +40,7 @@ export function useTelegramChannel(
 
   // Setup event listeners
   useEffect(() => {
-    if (!service || !options?.enabled) return;
+    if (!telegramService || !options?.enabled) return;
 
     const handleStatus = (statusObj: {
       status: "connected" | "connecting" | "disconnected";
@@ -74,39 +69,39 @@ export function useTelegramChannel(
       setConnecting(false);
     };
 
-    service.on("status", handleStatus);
-    service.on("error", handleError);
+    telegramService.on("status", handleStatus);
+    telegramService.on("error", handleError);
 
     return () => {
-      service.off("status");
-      service.off("error");
+      telegramService.off("status");
+      telegramService.off("error");
     };
-  }, [service, options?.enabled]);
+  }, [telegramService, options?.enabled]);
 
   // Service cleanup is handled by ServiceRegistry, no need for manual cleanup
 
   // Load config
   const loadConfig = useCallback(async () => {
-    if (!service) return;
+    if (!telegramService) return;
     try {
-      const loadedConfig = await service.loadConfig();
+      const loadedConfig = await telegramService.loadConfig();
       setConfig(loadedConfig);
     } catch (err: any) {
       console.error("Failed to load Telegram config:", err);
     }
-  }, [service]);
+  }, [telegramService]);
 
-  // Load config when enabled
+  // Load config when enabled and connected
   useEffect(() => {
-    if (options?.enabled && service && effectiveClient?.isConnected()) {
+    if (options?.enabled && telegramService && connectionStatus === "connected") {
       loadConfig();
     }
-  }, [options?.enabled, service, effectiveClient, loadConfig]);
+  }, [options?.enabled, telegramService, connectionStatus, loadConfig]);
 
   // Connect
   const connect = useCallback(
     async (botToken: string, connectConfig?: Partial<TelegramConfig>) => {
-      if (!service) {
+      if (!telegramService) {
         setError("Gateway client not available");
         return;
       }
@@ -120,34 +115,34 @@ export function useTelegramChannel(
       setError(null);
 
       try {
-        await service.connect(botToken, connectConfig);
+        await telegramService.connect(botToken, connectConfig);
       } catch (err: any) {
         setError(err.message || "Failed to connect Telegram");
         setConnecting(false);
       }
     },
-    [service]
+    [telegramService]
   );
 
   // Disconnect
   const disconnect = useCallback(async () => {
-    if (!service) return;
+    if (!telegramService) return;
     try {
-      await service.disconnect();
+      await telegramService.disconnect();
       setConnected(false);
     } catch (err: any) {
       setError(err.message || "Failed to disconnect Telegram");
     }
-  }, [service]);
+  }, [telegramService]);
 
   // Save config
   const saveConfig = useCallback(
     async (updates: Partial<TelegramConfig>) => {
-      if (!service) return;
+      if (!telegramService) return;
       setSavingConfig(true);
       try {
         const newConfig = { ...config, ...updates };
-        await service.saveConfig(newConfig);
+        await telegramService.saveConfig(newConfig);
         setConfig(newConfig);
       } catch (err: any) {
         setError(err.message || "Failed to save Telegram config");
@@ -156,7 +151,7 @@ export function useTelegramChannel(
         setSavingConfig(false);
       }
     },
-    [service, config]
+    [telegramService, config]
   );
 
   // Reset state

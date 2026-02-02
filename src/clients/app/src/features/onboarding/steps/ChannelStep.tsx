@@ -43,15 +43,15 @@ export function ChannelStep({
     enabled: selectedChannel === "whatsapp",
   });
 
-  const telegram = useTelegramChannel(gatewayClient, {
+  const telegram = useTelegramChannel({
     enabled: selectedChannel === "telegram",
   });
 
-  const discord = useDiscordChannel(gatewayClient, {
+  const discord = useDiscordChannel({
     enabled: selectedChannel === "discord",
   });
 
-  const signal = useSignalChannel(gatewayClient, {
+  const signal = useSignalChannel({
     enabled: selectedChannel === "signal",
   });
 

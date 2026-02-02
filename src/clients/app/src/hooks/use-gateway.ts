@@ -1,11 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { GatewayClient } from "../core/gateway/client";
-import { setGatewaySettings } from "../core/storage/settings-storage";
-import { GatewayClientFactory } from "../core/gateway/gateway-client-factory";
-import { GatewayEventHandlers } from "../core/gateway/gateway-event-handlers";
+import { useGatewayContext } from "../core/gateway/use-gateway-context";
 import { gatewayService } from "../core/gateway/gateway-service";
+import type { ConnectionStatus } from "../core/gateway/gateway-context";
 
-export type ConnectionStatus = "connected" | "disconnected" | "connecting";
+export type { ConnectionStatus };
 
 export interface GatewayStatus {
   running: boolean;
@@ -14,14 +12,13 @@ export interface GatewayStatus {
 }
 
 export interface UseGatewayReturn {
-  // Connection state
-  gatewayClient: GatewayClient | null;
+  // Connection state (from context)
+  gatewayClient: ReturnType<typeof useGatewayContext>["gatewayClient"];
   connectionStatus: ConnectionStatus;
   
   // Connection actions
   connect: () => Promise<void>;
   disconnect: () => void;
-  updateConfig: (host: string, port: number) => Promise<void>;
   
   // Server management
   serverStatus: GatewayStatus | null;
@@ -38,15 +35,13 @@ export interface UseGatewayReturn {
 const EXPLICITLY_STOPPED_KEY = "zuckerman:gateway:explicitly-stopped";
 
 /**
- * Consolidated hook for all gateway functionality:
- * - Client connection management
- * - Server lifecycle management
- * - Auto-initialization on mount
+ * Hook for gateway connection actions and server management
+ * Gets client and connection status from GatewayContext (managed by GatewayProvider)
+ * Provides connection actions and server lifecycle management
  */
 export function useGateway(): UseGatewayReturn {
-  // Connection state
-  const [gatewayClient, setGatewayClient] = useState<GatewayClient | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("disconnected");
+  // Get client and connection status from context (single source of truth)
+  const { gatewayClient, connectionStatus: contextConnectionStatus } = useGatewayContext();
   const connectingRef = useRef(false);
 
   // Server management state
@@ -68,31 +63,6 @@ export function useGateway(): UseGatewayReturn {
     } else {
       localStorage.removeItem(EXPLICITLY_STOPPED_KEY);
     }
-  }, []);
-
-  // Initialize gateway client from settings
-  useEffect(() => {
-    const eventHandlers = GatewayEventHandlers.createStateHandlers({
-      onConnect: () => {
-        console.log("[Gateway] Connection established");
-        setConnectionStatus("connected");
-      },
-      onDisconnect: () => {
-        console.log("[Gateway] Connection lost");
-        setConnectionStatus("disconnected");
-      },
-      onError: (error) => {
-        console.error("[Gateway] Error:", error);
-      },
-    });
-
-    const client = GatewayClientFactory.createWithStateHandlers(eventHandlers);
-    setGatewayClient(client);
-    setConnectionStatus("disconnected");
-
-    return () => {
-      client.disconnect();
-    };
   }, []);
 
   // Auto-initialize and start gateway server on mount (only if autoStart is enabled and not explicitly stopped)
@@ -139,22 +109,18 @@ export function useGateway(): UseGatewayReturn {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Connection actions
+  // Connection actions (work with context client)
   const connect = useCallback(async () => {
     if (!gatewayClient || gatewayClient.isConnected() || connectingRef.current) {
       return;
     }
 
     connectingRef.current = true;
-    setConnectionStatus("connecting");
     try {
       await gatewayClient.connect();
-      if (gatewayClient.isConnected()) {
-        setConnectionStatus("connected");
-      }
+      // Connection status will be updated via event handlers in GatewayProvider
     } catch (error) {
       console.error("[Gateway] Failed to connect:", error);
-      setConnectionStatus("disconnected");
     } finally {
       connectingRef.current = false;
     }
@@ -167,7 +133,7 @@ export function useGateway(): UseGatewayReturn {
     const checkInterval = setInterval(() => {
       const isConnected = gatewayClient.isConnected();
       const shouldReconnect = !isConnected && 
-                              connectionStatus === "disconnected" && 
+                              contextConnectionStatus === "disconnected" && 
                               !connectingRef.current &&
                               !isExplicitlyStopped() &&
                               serverStatus?.running;
@@ -179,49 +145,15 @@ export function useGateway(): UseGatewayReturn {
     }, 2000);
 
     return () => clearInterval(checkInterval);
-  }, [gatewayClient, connectionStatus, connect, serverStatus, isExplicitlyStopped]);
+  }, [gatewayClient, contextConnectionStatus, connect, serverStatus, isExplicitlyStopped]);
 
   const disconnect = useCallback(() => {
     if (gatewayClient) {
       gatewayClient.disconnect();
-      setConnectionStatus("disconnected");
+      // Connection status will be updated via event handlers in GatewayProvider
     }
   }, [gatewayClient]);
 
-  const updateConfig = useCallback(async (host: string, port: number) => {
-    setGatewaySettings({ host, port });
-
-    if (gatewayClient) {
-      gatewayClient.disconnect();
-    }
-
-    const eventHandlers = GatewayEventHandlers.createStateHandlers({
-      onConnect: () => {
-        setConnectionStatus("connected");
-      },
-      onDisconnect: () => {
-        setConnectionStatus("disconnected");
-      },
-      onError: (error) => {
-        console.error("Gateway error:", error);
-      },
-    });
-
-    const newClient = GatewayClientFactory.create({
-      host,
-      port,
-      ...eventHandlers,
-    });
-
-    setGatewayClient(newClient);
-    setConnectionStatus("connecting");
-    try {
-      await newClient.connect();
-    } catch (error) {
-      console.error("Failed to connect:", error);
-      setConnectionStatus("disconnected");
-    }
-  }, [gatewayClient]);
 
   // Server management actions
   const checkServerStatus = useCallback(async (host: string, port: number) => {
@@ -336,10 +268,9 @@ export function useGateway(): UseGatewayReturn {
 
   return {
     gatewayClient,
-    connectionStatus,
+    connectionStatus: contextConnectionStatus,
     connect,
     disconnect,
-    updateConfig,
     serverStatus,
     isServerLoading,
     isServerStarting,

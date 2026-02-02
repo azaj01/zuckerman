@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import type { GatewayClient } from "../../core/gateway/client";
 import { useSignalService } from "../../core/gateway/use-services";
 import { useGatewayContext } from "../../core/gateway/use-gateway-context";
 import type { SignalConfig } from "../../core/channels/types";
@@ -22,19 +21,15 @@ export interface UseSignalChannelReturn {
 
 /**
  * Hook for managing Signal channel connection and configuration
+ * Uses gateway client from context
  * 
  * Note: Signal integration requires signal-cli setup for full functionality.
  */
 export function useSignalChannel(
-  gatewayClient: GatewayClient | null,
   options?: { enabled?: boolean }
 ): UseSignalChannelReturn {
-  const { gatewayClient: contextClient } = useGatewayContext();
+  const { gatewayClient, connectionStatus } = useGatewayContext();
   const signalService = useSignalService();
-
-  // Use gatewayClient from context if not provided (for backward compatibility)
-  const effectiveClient = gatewayClient || contextClient;
-  const service = signalService;
 
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -47,7 +42,7 @@ export function useSignalChannel(
 
   // Setup event listeners
   useEffect(() => {
-    if (!service || !options?.enabled) return;
+    if (!signalService || !options?.enabled) return;
 
     const handleStatus = (statusObj: {
       status: "connected" | "connecting" | "disconnected";
@@ -76,39 +71,39 @@ export function useSignalChannel(
       setConnecting(false);
     };
 
-    service.on("status", handleStatus);
-    service.on("error", handleError);
+    signalService.on("status", handleStatus);
+    signalService.on("error", handleError);
 
     return () => {
-      service.off("status");
-      service.off("error");
+      signalService.off("status");
+      signalService.off("error");
     };
-  }, [service, options?.enabled]);
+  }, [signalService, options?.enabled]);
 
   // Service cleanup is handled by ServiceRegistry, no need for manual cleanup
 
   // Load config
   const loadConfig = useCallback(async () => {
-    if (!service) return;
+    if (!signalService) return;
     try {
-      const loadedConfig = await service.loadConfig();
+      const loadedConfig = await signalService.loadConfig();
       setConfig(loadedConfig);
     } catch (err: any) {
       console.error("Failed to load Signal config:", err);
     }
-  }, [service]);
+  }, [signalService]);
 
-  // Load config when enabled
+  // Load config when enabled and connected
   useEffect(() => {
-    if (options?.enabled && service && effectiveClient?.isConnected()) {
+    if (options?.enabled && signalService && connectionStatus === "connected") {
       loadConfig();
     }
-  }, [options?.enabled, service, effectiveClient, loadConfig]);
+  }, [options?.enabled, signalService, connectionStatus, loadConfig]);
 
   // Connect
   const connect = useCallback(
     async (connectConfig?: Partial<SignalConfig>) => {
-      if (!service) {
+      if (!signalService) {
         setError("Gateway client not available");
         return;
       }
@@ -117,34 +112,34 @@ export function useSignalChannel(
       setError(null);
 
       try {
-        await service.connect(connectConfig);
+        await signalService.connect(connectConfig);
       } catch (err: any) {
         setError(err.message || "Failed to connect Signal");
         setConnecting(false);
       }
     },
-    [service]
+    [signalService]
   );
 
   // Disconnect
   const disconnect = useCallback(async () => {
-    if (!service) return;
+    if (!signalService) return;
     try {
-      await service.disconnect();
+      await signalService.disconnect();
       setConnected(false);
     } catch (err: any) {
       setError(err.message || "Failed to disconnect Signal");
     }
-  }, [service]);
+  }, [signalService]);
 
   // Save config
   const saveConfig = useCallback(
     async (updates: Partial<SignalConfig>) => {
-      if (!service) return;
+      if (!signalService) return;
       setSavingConfig(true);
       try {
         const newConfig = { ...config, ...updates };
-        await service.saveConfig(newConfig);
+        await signalService.saveConfig(newConfig);
         setConfig(newConfig);
       } catch (err: any) {
         setError(err.message || "Failed to save Signal config");
@@ -153,7 +148,7 @@ export function useSignalChannel(
         setSavingConfig(false);
       }
     },
-    [service, config]
+    [signalService, config]
   );
 
   // Reset state

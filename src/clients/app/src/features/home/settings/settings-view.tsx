@@ -23,7 +23,6 @@ import { ChannelsView } from "./views/channels-view";
 interface SettingsProps {
   gatewayClient: GatewayClient | null;
   onClose?: () => void;
-  onGatewayConfigChange?: (host: string, port: number) => void;
 }
 
 type SettingsTab = "gateway" | "channels" | "llm" | "security" | "advanced";
@@ -31,7 +30,6 @@ type SettingsTab = "gateway" | "channels" | "llm" | "security" | "advanced";
 export function SettingsView({
   gatewayClient,
   onClose,
-  onGatewayConfigChange,
 }: SettingsProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("gateway");
   
@@ -65,7 +63,7 @@ export function SettingsView({
     handleEnableAllTools,
     handleReset,
     setShowResetDialog,
-  } = useSettings(gatewayClient, onGatewayConfigChange, startServer, stopServer);
+  } = useSettings(gatewayClient, undefined, startServer, stopServer);
 
   useEffect(() => {
     // Check gateway status when component mounts

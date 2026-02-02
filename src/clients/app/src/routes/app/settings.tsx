@@ -9,7 +9,6 @@ export const Route = createFileRoute("/app/settings")({
       <SettingsPage
         gatewayClient={app.gatewayClient}
         onClose={() => app.handleSidebarAction("navigate-home", {})}
-        onGatewayConfigChange={app.updateGatewayConfig}
       />
     );
   },

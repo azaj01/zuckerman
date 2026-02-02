@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import type { GatewayClient } from "../../core/gateway/client";
 import { useDiscordService } from "../../core/gateway/use-services";
 import { useGatewayContext } from "../../core/gateway/use-gateway-context";
 import type { DiscordConfig } from "../../core/channels/types";
@@ -22,17 +21,13 @@ export interface UseDiscordChannelReturn {
 
 /**
  * Hook for managing Discord channel connection and configuration
+ * Uses gateway client from context
  */
 export function useDiscordChannel(
-  gatewayClient: GatewayClient | null,
   options?: { enabled?: boolean }
 ): UseDiscordChannelReturn {
-  const { gatewayClient: contextClient } = useGatewayContext();
+  const { gatewayClient, connectionStatus } = useGatewayContext();
   const discordService = useDiscordService();
-
-  // Use gatewayClient from context if not provided (for backward compatibility)
-  const effectiveClient = gatewayClient || contextClient;
-  const service = discordService;
 
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -48,7 +43,7 @@ export function useDiscordChannel(
 
   // Setup event listeners
   useEffect(() => {
-    if (!service || !options?.enabled) return;
+    if (!discordService || !options?.enabled) return;
 
     const handleStatus = (statusObj: {
       status: "connected" | "connecting" | "disconnected";
@@ -77,39 +72,39 @@ export function useDiscordChannel(
       setConnecting(false);
     };
 
-    service.on("status", handleStatus);
-    service.on("error", handleError);
+    discordService.on("status", handleStatus);
+    discordService.on("error", handleError);
 
     return () => {
-      service.off("status");
-      service.off("error");
+      discordService.off("status");
+      discordService.off("error");
     };
-  }, [service, options?.enabled]);
+  }, [discordService, options?.enabled]);
 
   // Service cleanup is handled by ServiceRegistry, no need for manual cleanup
 
   // Load config
   const loadConfig = useCallback(async () => {
-    if (!service) return;
+    if (!discordService) return;
     try {
-      const loadedConfig = await service.loadConfig();
+      const loadedConfig = await discordService.loadConfig();
       setConfig(loadedConfig);
     } catch (err: any) {
       console.error("Failed to load Discord config:", err);
     }
-  }, [service]);
+  }, [discordService]);
 
-  // Load config when enabled
+  // Load config when enabled and connected
   useEffect(() => {
-    if (options?.enabled && service && effectiveClient?.isConnected()) {
+    if (options?.enabled && discordService && connectionStatus === "connected") {
       loadConfig();
     }
-  }, [options?.enabled, service, effectiveClient, loadConfig]);
+  }, [options?.enabled, discordService, connectionStatus, loadConfig]);
 
   // Connect
   const connect = useCallback(
     async (botToken: string, connectConfig?: Partial<DiscordConfig>) => {
-      if (!service) {
+      if (!discordService) {
         setError("Gateway client not available");
         return;
       }
@@ -123,34 +118,34 @@ export function useDiscordChannel(
       setError(null);
 
       try {
-        await service.connect(botToken, connectConfig);
+        await discordService.connect(botToken, connectConfig);
       } catch (err: any) {
         setError(err.message || "Failed to connect Discord");
         setConnecting(false);
       }
     },
-    [service]
+    [discordService]
   );
 
   // Disconnect
   const disconnect = useCallback(async () => {
-    if (!service) return;
+    if (!discordService) return;
     try {
-      await service.disconnect();
+      await discordService.disconnect();
       setConnected(false);
     } catch (err: any) {
       setError(err.message || "Failed to disconnect Discord");
     }
-  }, [service]);
+  }, [discordService]);
 
   // Save config
   const saveConfig = useCallback(
     async (updates: Partial<DiscordConfig>) => {
-      if (!service) return;
+      if (!discordService) return;
       setSavingConfig(true);
       try {
         const newConfig = { ...config, ...updates };
-        await service.saveConfig(newConfig);
+        await discordService.saveConfig(newConfig);
         setConfig(newConfig);
       } catch (err: any) {
         setError(err.message || "Failed to save Discord config");
@@ -159,7 +154,7 @@ export function useDiscordChannel(
         setSavingConfig(false);
       }
     },
-    [service, config]
+    [discordService, config]
   );
 
   // Reset state

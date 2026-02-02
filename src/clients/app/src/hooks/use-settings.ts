@@ -196,9 +196,8 @@ export function useSettings(
   const saveSettings = useCallback(async () => {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
 
-    if (onGatewayConfigChange && hasChanges) {
-      onGatewayConfigChange(settings.gateway.host, settings.gateway.port);
-    }
+    // Note: Gateway config changes require app restart to take effect
+    // GatewayProvider reads settings on mount
 
     // Save API keys if LLM provider is configured
     if (

@@ -24,15 +24,21 @@ declare global {
 
 
 function AppContent() {
+  return (
+    <GatewayProvider>
+      <AppContentWithContext />
+    </GatewayProvider>
+  );
+}
+
+function AppContentWithContext() {
   const app = useApp();
   const navigate = useNavigate();
   const location = useLocation();
   const showConnectionError = app.connectionStatus === "disconnected";
 
   return (
-    <GatewayProvider gatewayClient={app.gatewayClient}>
-      <AppRoutes app={app} navigate={navigate} location={location} showConnectionError={showConnectionError} />
-    </GatewayProvider>
+    <AppRoutes app={app} navigate={navigate} location={location} showConnectionError={showConnectionError} />
   );
 }
 
@@ -103,7 +109,6 @@ function AppRoutes({ app, navigate, location, showConnectionError }: {
                   <SettingsPage
                     gatewayClient={app.gatewayClient}
                     onClose={() => app.handleSidebarAction("navigate-home", {})}
-                    onGatewayConfigChange={app.updateGatewayConfig}
                   />
                 } 
               />

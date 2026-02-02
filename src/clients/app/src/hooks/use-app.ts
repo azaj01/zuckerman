@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useGateway } from "./use-gateway";
 import { useAgents } from "./use-agents";
 import { useChat } from "./use-chat";
+import { useGatewayContext } from "../core/gateway/use-gateway-context";
 import { removeStorageItem, getStorageItem, setStorageItem } from "../core/storage/local-storage";
 import type { OnboardingState } from "../features/onboarding/onboarding-flow";
 import type { AppState } from "../types/app-state";
@@ -13,7 +14,6 @@ export interface UseAppReturn extends AppState {
   setCurrentSessionId: (sessionId: string | null) => void;
   createSession: (type: "main" | "group" | "channel", agentId: string, label?: string) => Promise<void>;
   connect: () => Promise<void>;
-  updateGatewayConfig: (host: string, port: number) => Promise<void>;
 
   // Chat feature
   activeSessionIds: Set<string>;
@@ -47,16 +47,17 @@ export function useApp(): UseAppReturn {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Gateway
+  // Get gateway client from context (for components that still need it)
+  const { gatewayClient } = useGatewayContext();
+
+  // Gateway actions and server management
   const {
-    gatewayClient,
     connectionStatus,
     connect,
-    updateConfig,
   } = useGateway();
 
   // Agents
-  const { agents, currentAgentId, setCurrentAgentId, loadAgents } = useAgents(gatewayClient);
+  const { agents, currentAgentId, setCurrentAgentId, loadAgents } = useAgents();
 
   // Chat feature (sessions + messages + active sessions)
   const {
@@ -71,52 +72,45 @@ export function useApp(): UseAppReturn {
     isSending,
     sendMessage,
     loadMessages,
-  } = useChat(gatewayClient, currentAgentId, currentAgentId);
+  } = useChat(currentAgentId, currentAgentId);
 
   // Onboarding state
   const [showOnboarding, setShowOnboarding] = useState(() => {
     return !getStorageItem<string>("zuckerman:onboarding:completed", "");
   });
 
-  // Auto-connect when gateway client is ready (only if not explicitly stopped)
+  // Auto-connect when gateway is ready (only if not explicitly stopped)
   useEffect(() => {
-    if (!gatewayClient) return;
-
     const isExplicitlyStopped = localStorage.getItem("zuckerman:gateway:explicitly-stopped") === "true";
     if (isExplicitlyStopped) {
       return; // Don't auto-connect if gateway was explicitly stopped
     }
 
-    const isActuallyConnected = gatewayClient.isConnected();
-    const needsReconnect = !isActuallyConnected && connectionStatus === "disconnected";
-
-    if (needsReconnect) {
+    if (connectionStatus === "disconnected") {
       connect();
     }
-  }, [gatewayClient, connectionStatus, connect]);
+  }, [connectionStatus, connect]);
 
   // Reconnect on mount/remount (handles HMR) - only if not explicitly stopped
   useEffect(() => {
-    if (!gatewayClient) return;
-
     const isExplicitlyStopped = localStorage.getItem("zuckerman:gateway:explicitly-stopped") === "true";
     if (isExplicitlyStopped) {
       return; // Don't auto-connect if gateway was explicitly stopped
     }
 
     const timeoutId = setTimeout(() => {
-      if (gatewayClient && !gatewayClient.isConnected() && connectionStatus === "disconnected") {
+      if (connectionStatus === "disconnected") {
         connect();
       }
     }, 1000);
 
     return () => clearTimeout(timeoutId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gatewayClient]);
+  }, [connectionStatus, connect]);
 
-  // Load agents when connected
+  // Load agents when connected (handled by useAgents hook via context)
+  // This effect is kept for explicit manual loading if needed
   useEffect(() => {
-    if (connectionStatus === "connected" && gatewayClient?.isConnected()) {
+    if (connectionStatus === "connected") {
       // Small delay to ensure connection is fully established
       const timeoutId = setTimeout(() => {
         loadAgents().catch((error) => {
@@ -125,16 +119,16 @@ export function useApp(): UseAppReturn {
       }, 100);
       return () => clearTimeout(timeoutId);
     }
-  }, [connectionStatus, gatewayClient, loadAgents]);
+  }, [connectionStatus, loadAgents]);
 
   // Load sessions when agent is selected
   useEffect(() => {
-    if (gatewayClient?.isConnected() && currentAgentId) {
+    if (connectionStatus === "connected" && currentAgentId) {
       if (sessions.length === 0) {
         createSession("main", currentAgentId).catch(console.error);
       }
     }
-  }, [gatewayClient, currentAgentId, sessions.length, createSession]);
+  }, [connectionStatus, currentAgentId, sessions.length, createSession]);
 
   // UI Actions
   const handleRetryConnection = useCallback(() => {
@@ -305,12 +299,11 @@ export function useApp(): UseAppReturn {
     sessions,
     agents,
     connectionStatus,
-    gatewayClient,
+    gatewayClient, // Still needed by some components (OnboardingFlow, SettingsPage, etc.)
     setCurrentAgentId,
     setCurrentSessionId,
     createSession,
     connect,
-    updateGatewayConfig: updateConfig,
     activeSessionIds,
     addToActiveSessions,
     removeFromActiveSessions,

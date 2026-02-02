@@ -8,32 +8,6 @@ import type { GatewayClientOptions } from "../../core/gateway/types";
  */
 export class GatewayClientFactory {
   /**
-   * Create a GatewayClient with default configuration from settings
-   */
-  static createDefault(): GatewayClient {
-    const settings = getGatewaySettings();
-    return this.create({
-      host: settings.host,
-      port: settings.port,
-    });
-  }
-
-  /**
-   * Create a GatewayClient with custom configuration
-   */
-  static create(options: Partial<GatewayClientOptions>): GatewayClient {
-    const settings = getGatewaySettings();
-    return new GatewayClient({
-      host: options.host ?? settings.host ?? "127.0.0.1",
-      port: options.port ?? settings.port ?? 18789,
-      onConnect: options.onConnect,
-      onDisconnect: options.onDisconnect,
-      onError: options.onError,
-      onEvent: options.onEvent,
-    });
-  }
-
-  /**
    * Create a GatewayClient with event handlers for React state management
    */
   static createWithStateHandlers(handlers: {
