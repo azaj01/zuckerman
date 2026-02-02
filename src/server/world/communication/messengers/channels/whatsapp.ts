@@ -35,8 +35,10 @@ export class WhatsAppChannel implements Channel {
   private messageHandlers: Array<(message: ChannelMessage) => void> = [];
   private state: ChannelState = ChannelState.IDLE;
   private reconnectTimeout: NodeJS.Timeout | null = null;
-  private qrCodeCallback?: (qr: string) => void;
-  private connectionStatusCallback?: (connected: boolean) => void;
+  private statusCallback?: (status: {
+    status: "connected" | "connecting" | "disconnected" | "waiting_for_scan";
+    qr?: string | null;
+  }) => void;
   private saveCreds: (() => Promise<void>) | null = null;
   private currentQrCode: string | null = null;
   private lastState: ChannelState | null = null;
@@ -44,12 +46,13 @@ export class WhatsAppChannel implements Channel {
 
   constructor(
     config: WhatsAppConfig,
-    qrCallback?: (qr: string) => void,
-    connectionStatusCallback?: (connected: boolean) => void,
+    statusCallback?: (status: {
+      status: "connected" | "connecting" | "disconnected" | "waiting_for_scan";
+      qr?: string | null;
+    }) => void,
   ) {
     this.config = config;
-    this.qrCodeCallback = qrCallback;
-    this.connectionStatusCallback = connectionStatusCallback;
+    this.statusCallback = statusCallback;
   }
 
   async start(): Promise<void> {
@@ -112,7 +115,13 @@ export class WhatsAppChannel implements Channel {
       }
 
       const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-      this.saveCreds = saveCreds;
+      // Wrap saveCreds to ensure directory exists before saving
+      this.saveCreds = async () => {
+        if (!existsSync(AUTH_DIR)) {
+          mkdirSync(AUTH_DIR, { recursive: true });
+        }
+        await saveCreds();
+      };
       const { version } = await fetchLatestBaileysVersion();
 
       const logger = pino({ level: "silent" });
@@ -130,7 +139,7 @@ export class WhatsAppChannel implements Channel {
         markOnlineOnConnect: false,
       });
 
-      this.setupEventHandlers(saveCreds);
+      this.setupEventHandlers();
       // State is already set to CONNECTING above
     } catch (error) {
       this.state = ChannelState.IDLE;
@@ -138,14 +147,16 @@ export class WhatsAppChannel implements Channel {
     }
   }
 
-  private setupEventHandlers(saveCreds: () => Promise<void>): void {
+  private setupEventHandlers(): void {
     if (!this.socket) return;
 
     // Handle credentials update - CRITICAL: must save credentials immediately
     this.socket.ev.on("creds.update", async () => {
       try {
         console.log("[WhatsApp] Credentials updated, saving...");
-        await saveCreds();
+        if (this.saveCreds) {
+          await this.saveCreds();
+        }
         console.log("[WhatsApp] Credentials saved successfully");
       } catch (error) {
         console.error("[WhatsApp] Failed to save credentials:", error);
@@ -186,7 +197,12 @@ export class WhatsAppChannel implements Channel {
       // Clear QR code on connection state change (but only if no new QR code)
       // This ensures QR doesn't persist when connection state changes
       if (this.currentQrCode && connection !== undefined) {
+        const wasConnecting = connection === "connecting";
         this.clearQrCode();
+        // If QR was cleared and we're connecting, broadcast connecting state
+        if (wasConnecting) {
+          this.handleConnecting();
+        }
       }
     }
 
@@ -195,7 +211,10 @@ export class WhatsAppChannel implements Channel {
     if (connection === "open") {
       this.handleConnected();
     } else if (connection === "connecting") {
-      this.handleConnecting();
+      // Only call handleConnecting if we didn't already handle it above
+      if (!this.currentQrCode || this.state !== ChannelState.CONNECTING) {
+        this.handleConnecting();
+      }
     } else if (connection === "close") {
       this.handleDisconnected(lastDisconnect);
     }
@@ -205,8 +224,11 @@ export class WhatsAppChannel implements Channel {
     // Store current QR code
     this.currentQrCode = qr;
     
-    if (this.qrCodeCallback) {
-      this.qrCodeCallback(qr);
+    if (this.statusCallback) {
+      this.statusCallback({
+        status: "waiting_for_scan",
+        qr: qr,
+      });
     } else {
       // Fallback: print to terminal (CLI mode)
       console.log("\n[WhatsApp] Scan this QR code with WhatsApp:");
@@ -225,11 +247,6 @@ export class WhatsAppChannel implements Channel {
   private clearQrCode(): void {
     if (this.currentQrCode) {
       this.currentQrCode = null;
-      // Broadcast QR cleared event by calling callback with null
-      if (this.qrCodeCallback) {
-        // Call with empty string to signal clearing (factory will convert to null)
-        this.qrCodeCallback("");
-      }
     }
   }
 
@@ -266,8 +283,11 @@ export class WhatsAppChannel implements Channel {
       }
 
       // Always notify connection callback (state changed from non-connected to connected)
-      if (this.connectionStatusCallback) {
-        this.connectionStatusCallback(true);
+      if (this.statusCallback) {
+        this.statusCallback({
+          status: "connected",
+          qr: null,
+        });
       }
       this.lastState = this.state;
     }, 300); // 300ms debounce
@@ -277,6 +297,13 @@ export class WhatsAppChannel implements Channel {
     if (this.state !== ChannelState.CONNECTING && this.state !== ChannelState.RESTARTING) {
       console.log("[WhatsApp] Connecting...");
       this.state = ChannelState.CONNECTING;
+      // Broadcast connecting state
+      if (this.statusCallback) {
+        this.statusCallback({
+          status: "connecting",
+          qr: null,
+        });
+      }
     }
   }
 
@@ -389,8 +416,11 @@ export class WhatsAppChannel implements Channel {
       }
       
       // Don't reconnect automatically - user needs to scan QR again
-      if (this.connectionStatusCallback) {
-        this.connectionStatusCallback(false);
+      if (this.statusCallback) {
+        this.statusCallback({
+          status: "disconnected",
+          qr: null,
+        });
       }
       this.lastState = this.state;
       this.state = ChannelState.IDLE;
@@ -411,8 +441,11 @@ export class WhatsAppChannel implements Channel {
       }
       
       // Only notify if state actually changed
-      if (this.lastState !== ChannelState.IDLE && this.connectionStatusCallback) {
-        this.connectionStatusCallback(false);
+      if (this.lastState !== ChannelState.IDLE && this.statusCallback) {
+        this.statusCallback({
+          status: "disconnected",
+          qr: null,
+        });
       }
       this.lastState = this.state;
       this.state = ChannelState.IDLE;
@@ -425,8 +458,11 @@ export class WhatsAppChannel implements Channel {
       if (this.state === ChannelState.STOPPING || !this.config.enabled) {
         console.log("[WhatsApp] Not reconnecting - channel stopped or disabled");
         this.state = ChannelState.IDLE;
-        if (this.connectionStatusCallback) {
-          this.connectionStatusCallback(false);
+        if (this.statusCallback) {
+          this.statusCallback({
+            status: "disconnected",
+            qr: null,
+          });
         }
         return;
       }
@@ -452,8 +488,11 @@ export class WhatsAppChannel implements Channel {
       }
       
       // Only notify disconnect if we were actually connected
-      if (wasConnected && this.connectionStatusCallback) {
-        this.connectionStatusCallback(false);
+      if (wasConnected && this.statusCallback) {
+        this.statusCallback({
+          status: "disconnected",
+          qr: null,
+        });
       }
       
       // Cancel any existing reconnect timeout
@@ -467,8 +506,11 @@ export class WhatsAppChannel implements Channel {
           this.connect().catch((error) => {
             console.error("[WhatsApp] Reconnection failed:", error);
             this.state = ChannelState.IDLE;
-            if (this.connectionStatusCallback) {
-              this.connectionStatusCallback(false);
+            if (this.statusCallback) {
+              this.statusCallback({
+                status: "disconnected",
+                qr: null,
+              });
             }
           });
         } else {
@@ -514,8 +556,11 @@ export class WhatsAppChannel implements Channel {
     this.state = ChannelState.IDLE;
     
     // Only notify if state actually changed (wasn't already idle)
-    if (previousState === ChannelState.STOPPING && this.connectionStatusCallback) {
-      this.connectionStatusCallback(false);
+    if (previousState === ChannelState.STOPPING && this.statusCallback) {
+      this.statusCallback({
+        status: "disconnected",
+        qr: null,
+      });
     }
     this.lastState = this.state;
   }

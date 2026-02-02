@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { GatewayClient } from "../../core/gateway/client";
-import { TelegramChannelService } from "../../core/channels/telegram-channel-service";
+import { useTelegramService } from "../../core/gateway/use-services";
+import { useGatewayContext } from "../../core/gateway/use-gateway-context";
 import type { TelegramConfig } from "../../core/channels/types";
 
 export interface UseTelegramChannelReturn {
@@ -26,6 +27,13 @@ export function useTelegramChannel(
   gatewayClient: GatewayClient | null,
   options?: { enabled?: boolean }
 ): UseTelegramChannelReturn {
+  const { gatewayClient: contextClient } = useGatewayContext();
+  const telegramService = useTelegramService();
+
+  // Use gatewayClient from context if not provided (for backward compatibility)
+  const effectiveClient = gatewayClient || contextClient;
+  const service = telegramService;
+
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,17 +42,6 @@ export function useTelegramChannel(
     allowFrom: [],
   });
   const [savingConfig, setSavingConfig] = useState(false);
-
-  const serviceRef = useRef<TelegramChannelService | null>(null);
-
-  // Initialize service
-  const service = useMemo(() => {
-    if (!gatewayClient) return null;
-    if (!serviceRef.current) {
-      serviceRef.current = new TelegramChannelService(gatewayClient);
-    }
-    return serviceRef.current;
-  }, [gatewayClient]);
 
   // Setup event listeners
   useEffect(() => {
@@ -76,13 +73,7 @@ export function useTelegramChannel(
     };
   }, [service, options?.enabled]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      serviceRef.current?.destroy();
-      serviceRef.current = null;
-    };
-  }, []);
+  // Service cleanup is handled by ServiceRegistry, no need for manual cleanup
 
   // Load config
   const loadConfig = useCallback(async () => {
@@ -97,10 +88,10 @@ export function useTelegramChannel(
 
   // Load config when enabled
   useEffect(() => {
-    if (options?.enabled && service && gatewayClient?.isConnected()) {
+    if (options?.enabled && service && effectiveClient?.isConnected()) {
       loadConfig();
     }
-  }, [options?.enabled, service, gatewayClient?.isConnected(), loadConfig]);
+  }, [options?.enabled, service, effectiveClient, loadConfig]);
 
   // Connect
   const connect = useCallback(

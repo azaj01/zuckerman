@@ -16,15 +16,15 @@ export class GatewayEventHandlers {
       onDisconnect: handlers.onDisconnect,
       onError: handlers.onError,
       onEvent: (event: any) => {
-        // Handle channel events (e.g., WhatsApp QR codes and connection status)
-        if (event.event === "channel.whatsapp.qr" && event.payload) {
-          const payload = event.payload as { qr: string | null; channelId: string; cleared?: boolean };
-          console.log("[GatewayEventHandlers] Dispatching whatsapp-qr event:", payload.qr ? "QR received" : "QR cleared");
-          window.dispatchEvent(new CustomEvent("whatsapp-qr", { detail: payload }));
-        } else if (event.event === "channel.whatsapp.connection" && event.payload) {
-          const payload = event.payload as { connected: boolean; channelId: string };
-          console.log("[GatewayEventHandlers] Dispatching whatsapp-connection event:", payload.connected);
-          window.dispatchEvent(new CustomEvent("whatsapp-connection", { detail: payload }));
+        // Handle channel events (e.g., WhatsApp status)
+        if (event.event === "channel.whatsapp.status" && event.payload) {
+          const payload = event.payload as {
+            status: "connected" | "connecting" | "disconnected" | "waiting_for_scan";
+            qr?: string | null;
+            channelId: string;
+          };
+          console.log("[GatewayEventHandlers] Dispatching whatsapp-status event:", payload.status, payload.qr ? "with QR" : "no QR");
+          window.dispatchEvent(new CustomEvent("whatsapp-status", { detail: payload }));
         } else if (event.event === "channel.telegram.connection" && event.payload) {
           const payload = event.payload as { connected: boolean; channelId: string };
           window.dispatchEvent(new CustomEvent("telegram-connection", { detail: payload }));

@@ -1,27 +1,18 @@
-import React, { createContext, useMemo, useEffect, ReactNode } from "react";
+import React, { createContext, useMemo, useEffect, useRef, ReactNode } from "react";
 import type { GatewayClient } from "./client";
 import { gatewayService } from "./gateway-service";
-import { WhatsAppChannelService } from "../channels/whatsapp-channel-service";
-import { TelegramChannelService } from "../channels/telegram-channel-service";
-import { DiscordChannelService } from "../channels/discord-channel-service";
-import { SignalChannelService } from "../channels/signal-channel-service";
+import { serviceRegistry, type ServiceRegistry } from "./service-registry";
 
 export interface GatewayContextValue {
   gatewayClient: GatewayClient | null;
   gatewayService: typeof gatewayService;
-  whatsappService: WhatsAppChannelService | null;
-  telegramService: TelegramChannelService | null;
-  discordService: DiscordChannelService | null;
-  signalService: SignalChannelService | null;
+  serviceRegistry: ServiceRegistry;
 }
 
 export const GatewayContext = createContext<GatewayContextValue>({
   gatewayClient: null,
   gatewayService: gatewayService,
-  whatsappService: null,
-  telegramService: null,
-  discordService: null,
-  signalService: null,
+  serviceRegistry: serviceRegistry,
 });
 
 interface GatewayProviderProps {
@@ -30,17 +21,18 @@ interface GatewayProviderProps {
 }
 
 /**
- * GatewayProvider - manages gateway client and channel service instances
+ * GatewayProvider - manages gateway client and service registry
  * 
- * Ensures singleton instances per gateway client:
+ * Ensures singleton instances per gateway client via ServiceRegistry:
  * - One GatewayClient instance
  * - One GatewayService instance (singleton, shared across all providers)
- * - One WhatsAppChannelService instance per GatewayClient
- * - One TelegramChannelService instance per GatewayClient
- * - One DiscordChannelService instance per GatewayClient
- * - One SignalChannelService instance per GatewayClient
+ * - ServiceRegistry manages all services (channels + core) per GatewayClient
+ * - Services are created lazily on first access
+ * - Services are cleaned up when client changes or provider unmounts
  */
 export function GatewayProvider({ gatewayClient, children }: GatewayProviderProps) {
+  const previousClientRef = useRef<GatewayClient | null>(null);
+
   // Initialize gateway service with Electron API if available
   useEffect(() => {
     if (window.electronAPI) {
@@ -48,22 +40,23 @@ export function GatewayProvider({ gatewayClient, children }: GatewayProviderProp
     }
   }, []);
 
-  // Create service instances (one per gateway client, managed by provider)
-  const services = useMemo(() => {
-    if (!gatewayClient) {
-      return {
-        whatsappService: null,
-        telegramService: null,
-        discordService: null,
-        signalService: null,
-      };
+  // Cleanup services when gateway client changes
+  useEffect(() => {
+    const previousClient = previousClientRef.current;
+    
+    // If client changed, clear old client's services
+    if (previousClient && previousClient !== gatewayClient) {
+      serviceRegistry.clear(previousClient);
     }
 
-    return {
-      whatsappService: new WhatsAppChannelService(gatewayClient),
-      telegramService: new TelegramChannelService(gatewayClient),
-      discordService: new DiscordChannelService(gatewayClient),
-      signalService: new SignalChannelService(gatewayClient),
+    // Update ref
+    previousClientRef.current = gatewayClient;
+
+    // Cleanup on unmount
+    return () => {
+      if (gatewayClient) {
+        serviceRegistry.clear(gatewayClient);
+      }
     };
   }, [gatewayClient]);
 
@@ -71,9 +64,9 @@ export function GatewayProvider({ gatewayClient, children }: GatewayProviderProp
     () => ({
       gatewayClient,
       gatewayService,
-      ...services,
+      serviceRegistry,
     }),
-    [gatewayClient, services]
+    [gatewayClient]
   );
 
   return <GatewayContext.Provider value={value}>{children}</GatewayContext.Provider>;

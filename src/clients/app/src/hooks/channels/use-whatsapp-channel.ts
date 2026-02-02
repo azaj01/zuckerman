@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useWhatsAppService } from "../../core/gateway/use-services";
 import { useGatewayContext } from "../../core/gateway/use-gateway-context";
 import type { WhatsAppConfig } from "../../core/channels/types";
 
@@ -25,7 +26,8 @@ export interface UseWhatsAppChannelReturn {
 export function useWhatsAppChannel(
   options?: { enabled?: boolean }
 ): UseWhatsAppChannelReturn {
-  const { gatewayClient, whatsappService } = useGatewayContext();
+  const { gatewayClient } = useGatewayContext();
+  const whatsappService = useWhatsAppService();
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
@@ -43,39 +45,47 @@ export function useWhatsAppChannel(
   useEffect(() => {
     if (!service) return;
 
-    const handleQr = (qr: string | null) => {
-      console.log("[useWhatsAppChannel] handleQr called with:", qr ? `QR (length: ${qr.length})` : "null");
-      if (qr) {
-        // Clear timeout when QR code is received
-        if (qrTimeoutRef.current) {
-          clearTimeout(qrTimeoutRef.current);
-          qrTimeoutRef.current = null;
-        }
-        console.log("[useWhatsAppChannel] Setting QR code in state");
-        setQrCode(qr);
+    const handleStatus = (statusObj: {
+      status: "connected" | "connecting" | "disconnected" | "waiting_for_scan";
+      qr?: string | null;
+    }) => {
+      console.log("[useWhatsAppChannel] Status update:", statusObj.status, statusObj.qr ? `with QR (length: ${statusObj.qr.length})` : "no QR");
+      
+      const { status, qr } = statusObj;
+      
+      // Update QR code state
+      setQrCode(qr ?? null);
+      
+      // Update connection state based on status
+      if (status === "connected") {
+        setConnected(true);
         setConnecting(false);
-        setError(null);
-      } else {
-        console.log("[useWhatsAppChannel] Clearing QR code");
-        setQrCode(null);
-      }
-    };
-
-    const handleConnected = (isConnected: boolean) => {
-      setConnected(isConnected);
-      if (isConnected) {
         // Clear timeout when connected
         if (qrTimeoutRef.current) {
           clearTimeout(qrTimeoutRef.current);
           qrTimeoutRef.current = null;
         }
-        setQrCode(null);
-        setConnecting(false);
         setError(null);
         // Load config after connection
         setTimeout(() => {
           loadConfig();
         }, 500);
+      } else if (status === "connecting") {
+        setConnecting(true);
+        setConnected(false);
+        setError(null);
+      } else if (status === "waiting_for_scan") {
+        // Clear timeout when QR code is received
+        if (qrTimeoutRef.current) {
+          clearTimeout(qrTimeoutRef.current);
+          qrTimeoutRef.current = null;
+        }
+        setConnecting(false);
+        setConnected(false);
+        setError(null);
+      } else if (status === "disconnected") {
+        setConnected(false);
+        setConnecting(false);
       }
     };
 
@@ -90,14 +100,12 @@ export function useWhatsAppChannel(
     };
 
     console.log("[useWhatsAppChannel] Setting up event listeners on service");
-    service.on("qr", handleQr);
-    service.on("connected", handleConnected);
+    service.on("status", handleStatus);
     service.on("error", handleError);
 
     return () => {
       console.log("[useWhatsAppChannel] Cleaning up event listeners");
-      service.off("qr");
-      service.off("connected");
+      service.off("status");
       service.off("error");
     };
   }, [service]);

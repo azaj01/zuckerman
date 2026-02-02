@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { GatewayClient } from "../../core/gateway/client";
-import { DiscordChannelService } from "../../core/channels/discord-channel-service";
+import { useDiscordService } from "../../core/gateway/use-services";
+import { useGatewayContext } from "../../core/gateway/use-gateway-context";
 import type { DiscordConfig } from "../../core/channels/types";
 
 export interface UseDiscordChannelReturn {
@@ -26,6 +27,13 @@ export function useDiscordChannel(
   gatewayClient: GatewayClient | null,
   options?: { enabled?: boolean }
 ): UseDiscordChannelReturn {
+  const { gatewayClient: contextClient } = useGatewayContext();
+  const discordService = useDiscordService();
+
+  // Use gatewayClient from context if not provided (for backward compatibility)
+  const effectiveClient = gatewayClient || contextClient;
+  const service = discordService;
+
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,17 +45,6 @@ export function useDiscordChannel(
     },
   });
   const [savingConfig, setSavingConfig] = useState(false);
-
-  const serviceRef = useRef<DiscordChannelService | null>(null);
-
-  // Initialize service
-  const service = useMemo(() => {
-    if (!gatewayClient) return null;
-    if (!serviceRef.current) {
-      serviceRef.current = new DiscordChannelService(gatewayClient);
-    }
-    return serviceRef.current;
-  }, [gatewayClient]);
 
   // Setup event listeners
   useEffect(() => {
@@ -79,13 +76,7 @@ export function useDiscordChannel(
     };
   }, [service, options?.enabled]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      serviceRef.current?.destroy();
-      serviceRef.current = null;
-    };
-  }, []);
+  // Service cleanup is handled by ServiceRegistry, no need for manual cleanup
 
   // Load config
   const loadConfig = useCallback(async () => {
@@ -100,10 +91,10 @@ export function useDiscordChannel(
 
   // Load config when enabled
   useEffect(() => {
-    if (options?.enabled && service && gatewayClient?.isConnected()) {
+    if (options?.enabled && service && effectiveClient?.isConnected()) {
       loadConfig();
     }
-  }, [options?.enabled, service, gatewayClient?.isConnected(), loadConfig]);
+  }, [options?.enabled, service, effectiveClient, loadConfig]);
 
   // Connect
   const connect = useCallback(

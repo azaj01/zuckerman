@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { GatewayClient } from "../core/gateway/client";
-import { AgentService } from "../core/agents/agent-service";
+import { useAgentService } from "../core/gateway/use-services";
+import { useGatewayContext } from "../core/gateway/use-gateway-context";
 
 export interface UseAgentsReturn {
   agents: string[];
@@ -15,19 +16,24 @@ export interface UseAgentsReturn {
 export function useAgents(
   gatewayClient: GatewayClient | null
 ): UseAgentsReturn {
+  const { gatewayClient: contextClient } = useGatewayContext();
+  const agentService = useAgentService();
+
+  // Use gatewayClient from context if not provided (for backward compatibility)
+  const effectiveClient = gatewayClient || contextClient;
+
   const [agents, setAgents] = useState<string[]>([]);
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(null);
 
   const loadAgents = useCallback(async () => {
-    if (!gatewayClient?.isConnected()) {
-      console.log("[Agents] Gateway not connected, skipping agent load");
+    if (!effectiveClient?.isConnected() || !agentService) {
+      console.log("[Agents] Gateway not connected or service not available, skipping agent load");
       return;
     }
 
     try {
       console.log("[Agents] Loading agents...");
-      const service = new AgentService(gatewayClient);
-      const loadedAgents = await service.listAgents();
+      const loadedAgents = await agentService.listAgents();
       console.log("[Agents] Loaded agents:", loadedAgents);
       setAgents(loadedAgents);
 
@@ -44,13 +50,13 @@ export function useAgents(
     } catch (error) {
       console.error("[Agents] Failed to load agents:", error);
     }
-  }, [gatewayClient]);
+  }, [effectiveClient, agentService]);
 
   useEffect(() => {
-    if (gatewayClient?.isConnected()) {
+    if (effectiveClient?.isConnected() && agentService) {
       loadAgents();
     }
-  }, [gatewayClient, loadAgents]);
+  }, [effectiveClient, agentService, loadAgents]);
 
   return {
     agents,

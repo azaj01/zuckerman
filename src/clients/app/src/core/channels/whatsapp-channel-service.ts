@@ -6,8 +6,10 @@ import type { WhatsAppConfig, ChannelConnectionState, ChannelStatus } from "./ty
  */
 export class WhatsAppChannelService {
   private eventListeners: {
-    qr?: (qr: string | null) => void;
-    connected?: (connected: boolean) => void;
+    status?: (status: {
+      status: "connected" | "connecting" | "disconnected" | "waiting_for_scan";
+      qr?: string | null;
+    }) => void;
     error?: (error: string) => void;
   } = {};
 
@@ -19,36 +21,25 @@ export class WhatsAppChannelService {
    * Setup event listeners for WhatsApp-specific events
    */
   private setupEventListeners(): void {
-    const handleQrEvent = (e: CustomEvent<{ qr: string | null; channelId: string; cleared?: boolean }>) => {
-      console.log("[WhatsAppChannelService] Received whatsapp-qr window event:", e.detail.qr ? "QR received" : "QR cleared");
+    const handleStatusEvent = (e: CustomEvent<{
+      status: "connected" | "connecting" | "disconnected" | "waiting_for_scan";
+      qr?: string | null;
+      channelId: string;
+    }>) => {
+      console.log("[WhatsAppChannelService] Received whatsapp-status event:", e.detail.status, e.detail.qr ? "with QR" : "no QR");
       if (e.detail.channelId === "whatsapp") {
-        if (e.detail.cleared || !e.detail.qr) {
-          console.log("[WhatsAppChannelService] Calling qr listener with null, listener exists:", !!this.eventListeners.qr);
-          this.eventListeners.qr?.(null);
-        } else {
-          console.log("[WhatsAppChannelService] Calling qr listener with QR code, listener exists:", !!this.eventListeners.qr);
-          if (this.eventListeners.qr) {
-            this.eventListeners.qr(e.detail.qr);
-          } else {
-            console.error("[WhatsAppChannelService] QR listener not registered!");
-          }
-        }
+        this.eventListeners.status?.({
+          status: e.detail.status,
+          qr: e.detail.qr ?? null,
+        });
       }
     };
 
-    const handleConnectionEvent = (e: CustomEvent<{ connected: boolean; channelId: string }>) => {
-      if (e.detail.channelId === "whatsapp") {
-        this.eventListeners.connected?.(e.detail.connected);
-      }
-    };
-
-    window.addEventListener("whatsapp-qr", handleQrEvent as EventListener);
-    window.addEventListener("whatsapp-connection", handleConnectionEvent as EventListener);
+    window.addEventListener("whatsapp-status", handleStatusEvent as EventListener);
 
     // Store cleanup function
     this.cleanup = () => {
-      window.removeEventListener("whatsapp-qr", handleQrEvent as EventListener);
-      window.removeEventListener("whatsapp-connection", handleConnectionEvent as EventListener);
+      window.removeEventListener("whatsapp-status", handleStatusEvent as EventListener);
     };
   }
 
@@ -57,9 +48,9 @@ export class WhatsAppChannelService {
   /**
    * Register event listeners
    */
-  on<K extends keyof { qr: (qr: string | null) => void; connected: (connected: boolean) => void; error: (error: string) => void }>(
+  on<K extends keyof { status: (status: { status: "connected" | "connecting" | "disconnected" | "waiting_for_scan"; qr?: string | null }) => void; error: (error: string) => void }>(
     event: K,
-    handler: { qr: (qr: string | null) => void; connected: (connected: boolean) => void; error: (error: string) => void }[K]
+    handler: { status: (status: { status: "connected" | "connecting" | "disconnected" | "waiting_for_scan"; qr?: string | null }) => void; error: (error: string) => void }[K]
   ): void {
     console.log(`[WhatsAppChannelService] Registering ${event} listener`);
     this.eventListeners[event] = handler;
@@ -208,11 +199,14 @@ export class WhatsAppChannelService {
 
     // If already connected, notify immediately
     if (loginResponse.result?.event === "connected" && loginResponse.result.success) {
-      this.eventListeners.connected?.(true);
+      this.eventListeners.status?.({
+        status: "connected",
+        qr: null,
+      });
       return;
     }
 
-    // Otherwise, QR code will be emitted via event listener (channel.whatsapp.qr)
+    // Otherwise, status will be emitted via event listener (channel.whatsapp.status)
   }
 
   /**
@@ -227,6 +221,9 @@ export class WhatsAppChannelService {
       throw new Error(stopResponse.error?.message || "Failed to stop WhatsApp");
     }
 
-    this.eventListeners.connected?.(false);
+    this.eventListeners.status?.({
+      status: "disconnected",
+      qr: null,
+    });
   }
 }

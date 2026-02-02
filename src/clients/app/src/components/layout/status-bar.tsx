@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import type { AppState } from "@types/app-state";
-import { HealthService } from "@core/health/health-service";
+import { useHealthService } from "@core/gateway/use-services";
 
 interface StatusBarProps {
   state: AppState;
 }
 
 export function StatusBar({ state }: StatusBarProps) {
+  const healthService = useHealthService();
   const [health, setHealth] = useState<{
     status: string;
     uptime: number;
@@ -19,13 +20,12 @@ export function StatusBar({ state }: StatusBarProps) {
       const interval = setInterval(updateHealth, 5000);
       return () => clearInterval(interval);
     }
-  }, [state.connectionStatus, state.gatewayClient]);
+  }, [state.connectionStatus, state.gatewayClient, healthService]);
 
   const updateHealth = async () => {
-    if (!state.gatewayClient?.isConnected()) return;
+    if (!state.gatewayClient?.isConnected() || !healthService) return;
 
     try {
-      const healthService = new HealthService(state.gatewayClient);
       const healthData = await healthService.checkHealth();
       if (healthData) {
         setHealth(healthData);
@@ -36,8 +36,7 @@ export function StatusBar({ state }: StatusBarProps) {
   };
 
   const formatUptime = (ms: number) => {
-    if (!state.gatewayClient) return "";
-    const healthService = new HealthService(state.gatewayClient);
+    if (!healthService) return "";
     return healthService.formatUptime(ms);
   };
 

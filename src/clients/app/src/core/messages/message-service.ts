@@ -8,8 +8,12 @@ import { SessionService } from "../sessions/session-service";
 export class MessageService {
   private sessionService: SessionService;
 
-  constructor(private client: GatewayClient) {
-    this.sessionService = new SessionService(client);
+  constructor(
+    private client: GatewayClient,
+    sessionService?: SessionService
+  ) {
+    // Allow dependency injection, fallback to creating new instance
+    this.sessionService = sessionService || new SessionService(client);
   }
 
   /**

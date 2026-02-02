@@ -27,34 +27,13 @@ export async function initializeChannels(
   if (config.channels?.whatsapp?.enabled) {
     const whatsappChannel = new WhatsAppChannel(
       config.channels.whatsapp,
-      (qr) => {
-        // Broadcast QR code to all connected gateway clients
-        // Empty string means QR was cleared
-        if (broadcastEvent) {
-          if (qr && qr.length > 0) {
-            broadcastEvent({
-              type: "event",
-              event: "channel.whatsapp.qr",
-              payload: { qr, channelId: "whatsapp", ts: Date.now() },
-            });
-          } else {
-            // Broadcast QR cleared event
-            broadcastEvent({
-              type: "event",
-              event: "channel.whatsapp.qr",
-              payload: { qr: null, channelId: "whatsapp", cleared: true, ts: Date.now() },
-            });
-          }
-        }
-      },
-      (connected) => {
-        // Broadcast connection status to all connected gateway clients
-        // Only broadcast if status actually changed
+      (status) => {
+        // Broadcast status to all connected gateway clients
         if (broadcastEvent) {
           broadcastEvent({
             type: "event",
-            event: "channel.whatsapp.connection",
-            payload: { connected, channelId: "whatsapp", ts: Date.now() },
+            event: "channel.whatsapp.status",
+            payload: { ...status, channelId: "whatsapp", ts: Date.now() },
           });
         }
       },

@@ -3,6 +3,7 @@ import { GatewayContext, type GatewayContextValue } from "./gateway-provider";
 
 /**
  * Hook to access gateway context
+ * Provides gatewayClient, gatewayService, and serviceRegistry
  */
 export function useGatewayContext(): GatewayContextValue {
   const context = useContext(GatewayContext);
