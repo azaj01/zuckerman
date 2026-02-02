@@ -28,7 +28,7 @@ export interface ToolResult {
  * Execution context passed to tool handlers
  */
 export interface ToolExecutionContext {
-  sessionId: string;
+  conversationId: string;
   landDir?: string; // Workspace/land directory (sandbox path when sandboxed)
   stream?: (event: {
     type: "tool.call" | "tool.result";

@@ -1,15 +1,15 @@
-export type SessionType = "main" | "group" | "channel";
+export type ConversationType = "main" | "group" | "channel";
 
-export interface Session {
+export interface Conversation {
   id: string;
   label: string;
-  type: SessionType;
+  type: ConversationType;
   agentId?: string;
   lastActivity?: number;
 }
 
-export interface SessionState {
-  session?: Session;
+export interface ConversationState {
+  conversation?: Conversation;
   messages?: Array<{
     role: string;
     content: string;

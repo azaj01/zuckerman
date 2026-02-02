@@ -20,7 +20,7 @@ export function createCronTool(): Tool {
   return {
     definition: {
       name: "cron",
-      description: "Manage calendar events and scheduled tasks. Create, list, update, remove, and trigger calendar events. To create an event, use action='create' with an 'event' object containing: startTime (timestamp in milliseconds, required), title (optional), action (object with type='agentTurn' or 'systemEvent', required), and recurrence (optional). Action object requires: actionMessage (string, required), and optionally: contextMessage (string), agentId (string, defaults to 'zuckerman'), sessionTarget ('main' or 'isolated', defaults to 'isolated'). Channel metadata should be set at session creation time, not in the action. Example: {action:'create', event:{startTime:Date.now(), title:'Reminder', action:{type:'agentTurn', actionMessage:'Send me a message on Telegram saying Hi', contextMessage:'Telegram reminder for user', sessionTarget:'isolated'}, recurrence:{type:'cron', cronExpression:'*/5 * * * *'}}}",
+      description: "Manage calendar events and scheduled tasks. Create, list, update, remove, and trigger calendar events. To create an event, use action='create' with an 'event' object containing: startTime (timestamp in milliseconds, required), title (optional), action (object with type='agentTurn' or 'systemEvent', required), and recurrence (optional). Action object requires: actionMessage (string, required), and optionally: contextMessage (string), agentId (string, defaults to 'zuckerman'), conversationTarget ('main' or 'isolated', defaults to 'isolated'). Channel metadata should be set at conversation creation time, not in the action. Example: {action:'create', event:{startTime:Date.now(), title:'Reminder', action:{type:'agentTurn', actionMessage:'Send me a message on Telegram saying Hi', contextMessage:'Telegram reminder for user', conversationTarget:'isolated'}, recurrence:{type:'cron', cronExpression:'*/5 * * * *'}}}",
       parameters: {
         type: "object",
         properties: {
@@ -34,7 +34,7 @@ export function createCronTool(): Tool {
           },
           event: {
             type: "object",
-            description: "Event object (for create action). REQUIRED: startTime (number, timestamp in milliseconds), action (object). Optional: title (string), endTime (number), recurrence (object), enabled (boolean). Action object: type ('agentTurn' or 'systemEvent'), actionMessage (string, required), contextMessage (string, optional), agentId (string, optional, defaults to 'zuckerman'), sessionTarget ('main' or 'isolated', optional, defaults to 'isolated'). Recurrence: {type:'none'|'daily'|'weekly'|'monthly'|'yearly'|'cron', cronExpression (for cron type, e.g., '*/5 * * * *' for every 5 minutes), interval, endDate, count, timezone}. Example: {startTime:Date.now(), title:'Reminder', action:{type:'agentTurn', actionMessage:'Send me a message on Telegram saying Hi', contextMessage:'Telegram reminder', sessionTarget:'isolated'}, recurrence:{type:'cron', cronExpression:'*/5 * * * *'}}",
+            description: "Event object (for create action). REQUIRED: startTime (number, timestamp in milliseconds), action (object). Optional: title (string), endTime (number), recurrence (object), enabled (boolean). Action object: type ('agentTurn' or 'systemEvent'), actionMessage (string, required), contextMessage (string, optional), agentId (string, optional, defaults to 'zuckerman'), conversationTarget ('main' or 'isolated', optional, defaults to 'isolated'). Recurrence: {type:'none'|'daily'|'weekly'|'monthly'|'yearly'|'cron', cronExpression (for cron type, e.g., '*/5 * * * *' for every 5 minutes), interval, endDate, count, timezone}. Example: {startTime:Date.now(), title:'Reminder', action:{type:'agentTurn', actionMessage:'Send me a message on Telegram saying Hi', contextMessage:'Telegram reminder', conversationTarget:'isolated'}, recurrence:{type:'cron', cronExpression:'*/5 * * * *'}}",
           },
           patch: {
             type: "object",
@@ -161,10 +161,10 @@ export function createCronTool(): Tool {
 
             const newEventId = eventData.id || `event-${Date.now()}-${Math.random().toString(36).substring(7)}`;
             
-            // Store the sessionId that created this event
-            const actionWithSessionId: EventAction = {
+            // Store the conversationId that created this event
+            const actionWithConversationId: EventAction = {
               ...eventData.action,
-              sessionIdSource: executionContext?.sessionId,
+              conversationIdSource: executionContext?.conversationId,
             };
             
             const event: CalendarEvent = {
@@ -173,7 +173,7 @@ export function createCronTool(): Tool {
               startTime: eventData.startTime,
               endTime: eventData.endTime,
               recurrence: eventData.recurrence || { type: "none" },
-              action: actionWithSessionId,
+              action: actionWithConversationId,
               enabled: eventData.enabled !== false,
               createdAt: Date.now(),
             };

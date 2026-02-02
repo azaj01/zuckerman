@@ -19,7 +19,7 @@ export interface ResolvedRoute {
   agentId: string;
   channel: ChannelType;
   accountId?: string;
-  sessionKey: string;
+  conversationKey: string;
   matchedBy: "binding.peer" | "binding.guild" | "binding.team" | "binding.account" | "binding.channel" | "default";
 }
 
@@ -69,7 +69,7 @@ function pickFirstExistingAgentId(config: ZuckermanConfig, agentId: string): str
   return defaultAgent?.id || agentId;
 }
 
-function buildSessionKey(params: {
+function buildConversationKey(params: {
   agentId: string;
   channel: ChannelType;
   accountId?: string;
@@ -79,14 +79,14 @@ function buildSessionKey(params: {
   
   if (peer) {
     if (peer.kind === "dm") {
-      // Direct messages collapse to main session
+      // Direct messages collapse to main conversation
       return `agent:${agentId}:main`;
     }
-    // Groups/channels get isolated sessions
+    // Groups/channels get isolated conversations
     return `agent:${agentId}:${channel}:${peer.kind}:${peer.id}`;
   }
   
-  // Default main session
+  // Default main conversation
   return `agent:${agentId}:main`;
 }
 
@@ -104,7 +104,7 @@ export function resolveAgentRoute(input: ResolveRouteInput): ResolvedRoute {
 
   const choose = (agentId: string, matchedBy: ResolvedRoute["matchedBy"]) => {
     const resolvedAgentId = pickFirstExistingAgentId(config, agentId);
-    const sessionKey = buildSessionKey({
+    const conversationKey = buildConversationKey({
       agentId: resolvedAgentId,
       channel,
       accountId,
@@ -115,7 +115,7 @@ export function resolveAgentRoute(input: ResolveRouteInput): ResolvedRoute {
       agentId: resolvedAgentId,
       channel,
       accountId,
-      sessionKey,
+      conversationKey,
       matchedBy,
     };
   };

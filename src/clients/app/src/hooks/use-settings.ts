@@ -587,14 +587,14 @@ export function useSettings(
     try {
       if (gatewayClient?.isConnected()) {
         try {
-          const sessionsResponse = await gatewayClient.request("sessions.list");
-          if (sessionsResponse.ok && sessionsResponse.result) {
-            const sessions = (sessionsResponse.result as { sessions?: Array<{ id: string }> }).sessions || [];
-            for (const session of sessions) {
+          const conversationsResponse = await gatewayClient.request("conversations.list");
+          if (conversationsResponse.ok && conversationsResponse.result) {
+            const conversations = (conversationsResponse.result as { conversations?: Array<{ id: string }> }).conversations || [];
+            for (const conversation of conversations) {
               try {
-                await gatewayClient.request("sessions.delete", { id: session.id });
+                await gatewayClient.request("conversations.delete", { id: conversation.id });
               } catch (err) {
-                console.warn(`Failed to delete session ${session.id}:`, err);
+                console.warn(`Failed to delete conversation ${conversation.id}:`, err);
               }
             }
           }

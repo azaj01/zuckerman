@@ -15,7 +15,7 @@ config({
 import { Command } from "commander";
 import { runKillPortCommand } from "./kill-port-command.js";
 import { createAgentsCommand } from "./commands/agents.js";
-import { createSessionsCommand } from "./commands/sessions.js";
+import { createConversationsCommand } from "./commands/conversations.js";
 import { createGatewayCommand } from "./commands/gateway.js";
 import { createStatusCommand } from "./commands/status.js";
 import { createChannelsCommand } from "./commands/channels.js";
@@ -33,7 +33,7 @@ program
 
 // Add entity-based commands
 program.addCommand(createAgentsCommand());
-program.addCommand(createSessionsCommand());
+program.addCommand(createConversationsCommand());
 program.addCommand(createGatewayCommand());
 program.addCommand(createStatusCommand());
 program.addCommand(createChannelsCommand());

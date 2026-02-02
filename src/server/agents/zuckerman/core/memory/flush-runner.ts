@@ -4,10 +4,10 @@
 
 import { randomUUID } from "node:crypto";
 import type { AgentRuntime } from "@server/world/runtime/agents/types.js";
-import type { SessionManager } from "../../sessions/manager.js";
-import { deriveSessionKey } from "../../sessions/manager.js";
-import { loadSessionStore, saveSessionStore } from "../../sessions/store.js";
-import type { SessionEntry } from "../../sessions/types.js";
+import type { ConversationManager } from "../../conversations/manager.js";
+import { deriveConversationKey } from "../../conversations/manager.js";
+import { loadConversationStore, saveConversationStore } from "../../conversations/store.js";
+import type { ConversationEntry } from "../../conversations/types.js";
 import {
   resolveMemoryFlushSettings,
   resolveMemoryFlushContextWindowTokens,
@@ -18,13 +18,13 @@ import type { ZuckermanConfig } from "@server/world/config/types.js";
 export async function runMemoryFlushIfNeeded(params: {
   config: ZuckermanConfig;
   runtime: AgentRuntime;
-  sessionManager: SessionManager;
-  sessionId: string;
+  conversationManager: ConversationManager;
+  conversationId: string;
   modelId?: string;
   agentId: string;
   landDir: string;
-}): Promise<SessionEntry | undefined> {
-  const { config, runtime, sessionManager, sessionId, modelId, agentId, landDir } = params;
+}): Promise<ConversationEntry | undefined> {
+  const { config, runtime, conversationManager, conversationId, modelId, agentId, landDir } = params;
 
   // Resolve memory flush settings
   const memoryFlushSettings = resolveMemoryFlushSettings({
@@ -35,16 +35,16 @@ export async function runMemoryFlushIfNeeded(params: {
     return undefined; // Memory flush disabled
   }
 
-  // Get session entry to check token counts
-  const session = sessionManager.getSession(sessionId);
-  if (!session) {
+  // Get conversation entry to check token counts
+  const conversation = conversationManager.getConversation(conversationId);
+  if (!conversation) {
     return undefined;
   }
 
-  const sessionKey = deriveSessionKey(agentId, session.session.type, session.session.label);
-  const storePath = sessionManager.getStorePath();
-  const store = loadSessionStore(storePath);
-  const entry = store[sessionKey];
+  const conversationKey = deriveConversationKey(agentId, conversation.conversation.type, conversation.conversation.label);
+  const storePath = conversationManager.getStorePath();
+  const store = loadConversationStore(storePath);
+  const entry = store[conversationKey];
 
   // Check if memory flush should run
   const contextWindowTokens = resolveMemoryFlushContextWindowTokens({
@@ -66,10 +66,10 @@ export async function runMemoryFlushIfNeeded(params: {
   // Run memory flush
   try {
     // Run agent with memory flush prompt
-    // Note: SecurityContext will be created by the runtime based on session
+    // Note: SecurityContext will be created by the runtime based on conversation
     // We pass undefined to use default security context
     const result = await runtime.run({
-      sessionId,
+      conversationId,
       message: memoryFlushSettings.prompt,
       thinkingLevel: "off", // Keep flush simple
       temperature: 0.7, // Lower temperature for more focused memory saving
@@ -77,8 +77,8 @@ export async function runMemoryFlushIfNeeded(params: {
       model: undefined,
     });
 
-    // Update session entry with flush metadata
-    const updatedEntry = await sessionManager.updateSessionEntry(sessionId, (current) => ({
+    // Update conversation entry with flush metadata
+    const updatedEntry = await conversationManager.updateConversationEntry(conversationId, (current) => ({
       memoryFlushCount: (current.memoryFlushCount ?? 0) + 1,
       memoryFlushAt: Date.now(),
     }));

@@ -1,5 +1,5 @@
 import type { SecurityConfig, SecurityContext } from "../types.js";
-import type { SessionType } from "@server/agents/zuckerman/sessions/types.js";
+import type { ConversationType } from "@server/agents/zuckerman/conversations/types.js";
 import { resolveSecurityContext as resolvePolicy } from "../policy/resolver.js";
 import { ensureSandboxContainer } from "../sandbox/manager.js";
 import type { SandboxContext } from "../types.js";
@@ -9,21 +9,21 @@ import type { SandboxContext } from "../types.js";
  */
 export async function resolveSecurityContext(
   config: SecurityConfig | undefined,
-  sessionId: string,
-  sessionType: SessionType,
+  conversationId: string,
+  conversationType: ConversationType,
   agentId: string,
   landDir: string,
   agentLandDir?: string,
 ): Promise<SecurityContext> {
   // Resolve policy-based context
-  const context = resolvePolicy(config, sessionId, sessionType, agentId);
+  const context = resolvePolicy(config, conversationId, conversationType, agentId);
 
   // Resolve sandbox if needed
   let sandboxContext: SandboxContext | null = null;
   if (context.isSandboxed && config?.sandbox) {
     try {
       sandboxContext = await ensureSandboxContainer({
-        sessionId,
+        conversationId,
         agentId,
         workspaceDir: landDir,
         agentWorkspaceDir: agentLandDir,

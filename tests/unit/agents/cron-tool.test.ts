@@ -217,7 +217,7 @@ describe("Cron Tool", () => {
             action: {
               type: "agentTurn",
               actionMessage: "Do something",
-              sessionTarget: "isolated",
+              conversationTarget: "isolated",
             },
             recurrence: {
               type: "cron",

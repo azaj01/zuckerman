@@ -10,7 +10,7 @@ import type { AppState } from "../types/app-state";
 
 interface SidebarProps {
   state: AppState;
-  activeSessionIds: Set<string>;
+  activeConversationIds: Set<string>;
   onAction: (action: string, data: any) => void;
 }
 
@@ -86,21 +86,21 @@ function CollapsibleSection({ title, count, defaultExpanded = true, alwaysExpand
   );
 }
 
-function SessionItem({ 
-  session, 
+function ConversationItem({ 
+  conversation, 
   isActive, 
   onSelect, 
   onRestore,
   onArchive
 }: { 
-  session: AppState["sessions"][0]; 
+  conversation: AppState["conversations"][0]; 
   isActive: boolean; 
   onSelect: () => void;
   onRestore?: () => void;
   onArchive?: () => void;
 }) {
   const getIcon = () => {
-    switch (session.type) {
+    switch (conversation.type) {
       case "main":
         return <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />;
       case "group":
@@ -140,7 +140,7 @@ function SessionItem({
         )}
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {getIcon()}
-          <span className="truncate flex-1">{session.label || session.id}</span>
+          <span className="truncate flex-1">{conversation.label || conversation.id}</span>
         </div>
         {/* Subtle hover background */}
         <div 
@@ -181,7 +181,7 @@ function SessionItem({
   );
 }
 
-export function Sidebar({ state, activeSessionIds, onAction }: SidebarProps) {
+export function Sidebar({ state, activeConversationIds, onAction }: SidebarProps) {
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   
@@ -196,40 +196,40 @@ export function Sidebar({ state, activeSessionIds, onAction }: SidebarProps) {
     ? "calendar"
     : "home";
 
-  // Filter sessions based on search
-  const filteredSessions = useMemo(() => {
-    if (!searchQuery.trim()) return state.sessions;
+  // Filter conversations based on search
+  const filteredConversations = useMemo(() => {
+    if (!searchQuery.trim()) return state.conversations;
     const query = searchQuery.toLowerCase();
-    return state.sessions.filter(
-      (session) =>
-        session.label?.toLowerCase().includes(query) ||
-        session.id.toLowerCase().includes(query)
+    return state.conversations.filter(
+      (conversation) =>
+        conversation.label?.toLowerCase().includes(query) ||
+        conversation.id.toLowerCase().includes(query)
     );
-  }, [state.sessions, searchQuery]);
+  }, [state.conversations, searchQuery]);
 
-  // Group sessions into Active and Archived, sorted by lastActivity (most recent first)
-  const activeSessions = useMemo(() => {
-    return filteredSessions
-      .filter((s) => activeSessionIds.has(s.id))
+  // Group conversations into Active and Archived, sorted by lastActivity (most recent first)
+  const activeConversations = useMemo(() => {
+    return filteredConversations
+      .filter((s) => activeConversationIds.has(s.id))
       .sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
-  }, [filteredSessions, activeSessionIds]);
+  }, [filteredConversations, activeConversationIds]);
 
-  const archivedSessions = useMemo(() => {
-    return filteredSessions
-      .filter((s) => !activeSessionIds.has(s.id))
+  const archivedConversations = useMemo(() => {
+    return filteredConversations
+      .filter((s) => !activeConversationIds.has(s.id))
       .sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
-  }, [filteredSessions, activeSessionIds]);
+  }, [filteredConversations, activeConversationIds]);
 
-  // Count sessions per agent
-  const agentSessionCounts = useMemo(() => {
+  // Count conversations per agent
+  const agentConversationCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    state.sessions.forEach((session) => {
-      if (session.agentId) {
-        counts[session.agentId] = (counts[session.agentId] || 0) + 1;
+    state.conversations.forEach((conversation) => {
+      if (conversation.agentId) {
+        counts[conversation.agentId] = (counts[conversation.agentId] || 0) + 1;
       }
     });
     return counts;
-  }, [state.sessions]);
+  }, [state.conversations]);
 
   // Filter agents based on search
   const filteredAgents = useMemo(() => {
@@ -296,68 +296,68 @@ export function Sidebar({ state, activeSessionIds, onAction }: SidebarProps) {
 
           <Separator className="my-2" />
 
-          {/* Active Sessions */}
+          {/* Active Conversations */}
           <CollapsibleSection
-            title="Active Sessions"
-            count={activeSessions.length}
+            title="Active"
+            count={activeConversations.length}
             defaultExpanded={true}
-            alwaysExpanded={activeSessions.length > 0}
+            alwaysExpanded={activeConversations.length > 0}
             actionButton={
               <button
-                onClick={() => onAction("new-session", {})}
+                onClick={() => onAction("new-conversation", {})}
                 className="p-1 rounded-md hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
-                title="New session"
+                title="New conversation"
               >
                 <Plus className="h-3.5 w-3.5" />
               </button>
             }
           >
             <div className="px-2 space-y-0.5">
-              {activeSessions.length === 0 ? (
-                state.sessions.length === 0 && !searchQuery ? (
+              {activeConversations.length === 0 ? (
+                state.conversations.length === 0 && !searchQuery ? (
                   <div className="px-3 py-2 text-xs text-muted-foreground/70">
-                    No sessions yet
+                    No conversations yet
                   </div>
                 ) : (
                   <div className="px-3 py-2 text-xs text-muted-foreground/70">
-                    {searchQuery ? "No matching active sessions" : "No active sessions"}
+                    {searchQuery ? "No matching active conversations" : "No active conversations"}
                   </div>
                 )
               ) : (
-                activeSessions.map((session) => (
-                  <SessionItem
-                    key={session.id}
-                    session={session}
-                    isActive={currentPage === "home" && session.id === state.currentSessionId}
-                    onSelect={() => onAction("select-session", { sessionId: session.id })}
-                    onArchive={() => onAction("archive-session", { sessionId: session.id })}
+                activeConversations.map((conversation) => (
+                  <ConversationItem
+                    key={conversation.id}
+                    conversation={conversation}
+                    isActive={currentPage === "home" && conversation.id === state.currentConversationId}
+                    onSelect={() => onAction("select-conversation", { conversationId: conversation.id })}
+                    onArchive={() => onAction("archive-conversation", { conversationId: conversation.id })}
                   />
                 ))
               )}
             </div>
           </CollapsibleSection>
 
-          {/* Archived Sessions */}
+          {/* Archived Conversations */}
           <CollapsibleSection
             title="Archived"
-            count={archivedSessions.length}
+            count={archivedConversations.length}
             defaultExpanded={false}
           >
             <div className="px-2 space-y-0.5">
-              {archivedSessions.length === 0 ? (
+              {archivedConversations.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-muted-foreground/70">
-                  {searchQuery ? "No matching sessions" : "No archived sessions"}
+                  {searchQuery ? "No matching conversations" : "No archived conversations"}
                 </div>
               ) : (
-                archivedSessions.map((session) => (
-                  <SessionItem
-                    key={session.id}
-                    session={session}
+                archivedConversations.map((conversation) => (
+                  <ConversationItem
+                    key={conversation.id}
+                    conversation={conversation}
                     isActive={false}
                     onSelect={() => {
-                      // Don't immediately select archived sessions - require restore button
+                      // Don't immediately select archived conversations - require restore button
                     }}
-                    onRestore={() => onAction("restore-session", { sessionId: session.id })}
+                    onRestore={() => onAction("restore-conversation", { conversationId: conversation.id })}
                   />
                 ))
               )}
@@ -379,7 +379,7 @@ export function Sidebar({ state, activeSessionIds, onAction }: SidebarProps) {
                 </div>
               ) : (
                 filteredAgents.map((agentId) => {
-                  const sessionCount = agentSessionCounts[agentId] || 0;
+                  const conversationCount = agentConversationCounts[agentId] || 0;
                   const isActive = currentPage === "agent" && agentId === state.currentAgentId;
                   return (
                     <button
@@ -410,9 +410,9 @@ export function Sidebar({ state, activeSessionIds, onAction }: SidebarProps) {
                       <div className="flex items-center gap-2 flex-1 min-w-0">
                         <Bot className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <span className="truncate flex-1">{agentId}</span>
-                        {sessionCount > 0 && (
+                        {conversationCount > 0 && (
                           <Badge variant="secondary" className="h-4 px-1.5 text-[10px] font-normal bg-muted/50 text-muted-foreground border-0 shrink-0">
-                            {sessionCount}
+                            {conversationCount}
                           </Badge>
                         )}
                       </div>

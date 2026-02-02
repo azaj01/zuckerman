@@ -4,8 +4,8 @@ export type ActivityType =
   | "agent.run.error"
   | "tool.call"
   | "tool.result"
-  | "session.create"
-  | "session.update"
+  | "conversation.create"
+  | "conversation.update"
   | "channel.message.incoming"
   | "channel.message.outgoing"
   | "calendar.event.triggered"
@@ -18,7 +18,7 @@ export interface Activity {
   type: ActivityType;
   timestamp: number;
   agentId?: string;
-  sessionId?: string;
+  conversationId?: string;
   runId?: string;
   metadata: {
     // Agent run activities
@@ -34,9 +34,9 @@ export interface Activity {
     toolResult?: unknown;
     toolError?: string;
     
-    // Session activities
-    sessionType?: string;
-    sessionLabel?: string;
+    // Conversation activities
+    conversationType?: string;
+    conversationLabel?: string;
     
     // Channel activities
     channel?: string;
@@ -57,7 +57,7 @@ export interface ActivityQuery {
   from?: number; // Start timestamp
   to?: number; // End timestamp
   agentId?: string;
-  sessionId?: string;
+  conversationId?: string;
   type?: ActivityType | ActivityType[];
   limit?: number;
   offset?: number;

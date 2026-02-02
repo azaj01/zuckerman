@@ -11,14 +11,14 @@ import type { AppState } from "../types/app-state";
 export interface UseAppReturn extends AppState {
   // Actions
   setCurrentAgentId: (agentId: string | null) => void;
-  setCurrentSessionId: (sessionId: string | null) => void;
-  createSession: (type: "main" | "group" | "channel", agentId: string, label?: string) => Promise<void>;
+  setCurrentConversationId: (conversationId: string | null) => void;
+  createConversation: (type: "main" | "group" | "channel", agentId: string, label?: string) => Promise<void>;
   connect: () => Promise<void>;
 
   // Chat feature
-  activeSessionIds: Set<string>;
-  addToActiveSessions: (sessionId: string) => void;
-  removeFromActiveSessions: (sessionId: string) => void;
+  activeConversationIds: Set<string>;
+  addToActiveConversations: (conversationId: string) => void;
+  removeFromActiveConversations: (conversationId: string) => void;
   messages: import("../types/message").Message[];
   isSending: boolean;
   sendMessage: (message: string) => Promise<void>;
@@ -39,7 +39,7 @@ export interface UseAppReturn extends AppState {
  * Consolidated hook for app orchestration:
  * - Gateway connection
  * - Agents management
- * - Chat feature (sessions + messages + active sessions)
+ * - Chat feature (conversations + messages + active conversations)
  * - UI actions (sidebar, menu, navigation)
  * - Onboarding flow
  */
@@ -59,15 +59,15 @@ export function useApp(): UseAppReturn {
   // Agents
   const { agents, currentAgentId, setCurrentAgentId, loadAgents } = useAgents();
 
-  // Chat feature (sessions + messages + active sessions)
+  // Chat feature (conversations + messages + active conversations)
   const {
-    sessions,
-    currentSessionId,
-    setCurrentSessionId,
-    createSession,
-    activeSessionIds,
-    addToActiveSessions,
-    removeFromActiveSessions,
+    conversations,
+    currentConversationId,
+    setCurrentConversationId,
+    createConversation,
+    activeConversationIds,
+    addToActiveConversations,
+    removeFromActiveConversations,
     messages,
     isSending,
     sendMessage,
@@ -121,14 +121,14 @@ export function useApp(): UseAppReturn {
     }
   }, [connectionStatus, loadAgents]);
 
-  // Load sessions when agent is selected
+  // Load conversations when agent is selected
   useEffect(() => {
     if (connectionStatus === "connected" && currentAgentId) {
-      if (sessions.length === 0) {
-        createSession("main", currentAgentId).catch(console.error);
+      if (conversations.length === 0) {
+        createConversation("main", currentAgentId).catch(console.error);
       }
     }
-  }, [connectionStatus, currentAgentId, sessions.length, createSession]);
+  }, [connectionStatus, currentAgentId, conversations.length, createConversation]);
 
   // UI Actions
   const handleRetryConnection = useCallback(() => {
@@ -138,44 +138,44 @@ export function useApp(): UseAppReturn {
   const handleSidebarAction = useCallback(
     (action: string, data: any) => {
       switch (action) {
-        case "select-session":
-          setCurrentSessionId(data.sessionId);
-          addToActiveSessions(data.sessionId);
+        case "select-conversation":
+          setCurrentConversationId(data.conversationId);
+          addToActiveConversations(data.conversationId);
           navigate("/");
           break;
-        case "restore-session":
-          setCurrentSessionId(data.sessionId);
-          addToActiveSessions(data.sessionId);
+        case "restore-conversation":
+          setCurrentConversationId(data.conversationId);
+          addToActiveConversations(data.conversationId);
           navigate("/");
           break;
-        case "archive-session":
-          removeFromActiveSessions(data.sessionId);
-          if (data.sessionId === currentSessionId) {
-            const remainingActive = Array.from(activeSessionIds).filter(
-              (id) => id !== data.sessionId
+        case "archive-conversation":
+          removeFromActiveConversations(data.conversationId);
+          if (data.conversationId === currentConversationId) {
+            const remainingActive = Array.from(activeConversationIds).filter(
+              (id) => id !== data.conversationId
             );
             const nextActive = remainingActive.length > 0 ? remainingActive[0] : null;
-            setCurrentSessionId(nextActive);
+            setCurrentConversationId(nextActive);
           }
           break;
         case "select-agent":
           setCurrentAgentId(data.agentId);
           navigate(`/agent/${data.agentId}`);
           break;
-        case "new-session":
+        case "new-conversation":
           if (currentAgentId) {
-            createSession("main", currentAgentId)
-              .then((newSession) => {
-                // Add to active sessions
-                addToActiveSessions(newSession.id);
+            createConversation("main", currentAgentId)
+              .then((newConversation) => {
+                // Add to active conversations
+                addToActiveConversations(newConversation.id);
                 // Navigate to home if needed
                 if (location.pathname !== "/") {
                   navigate("/");
                 }
               })
               .catch((error) => {
-                console.error("Failed to create session:", error);
-                alert(`Failed to create session: ${error instanceof Error ? error.message : "Unknown error"}`);
+                console.error("Failed to create conversation:", error);
+                alert(`Failed to create conversation: ${error instanceof Error ? error.message : "Unknown error"}`);
               });
           } else {
             alert("Please select an agent first");
@@ -201,14 +201,14 @@ export function useApp(): UseAppReturn {
       }
     },
     [
-      setCurrentSessionId,
-      addToActiveSessions,
-      removeFromActiveSessions,
-      activeSessionIds,
-      currentSessionId,
+      setCurrentConversationId,
+      addToActiveConversations,
+      removeFromActiveConversations,
+      activeConversationIds,
+      currentConversationId,
       setCurrentAgentId,
       currentAgentId,
-      createSession,
+      createConversation,
       navigate,
       location.pathname,
     ]
@@ -231,8 +231,8 @@ export function useApp(): UseAppReturn {
 
     const handleMenuAction = (action: string) => {
       switch (action) {
-        case "new-session":
-          handleSidebarAction("new-session", {});
+        case "new-conversation":
+          handleSidebarAction("new-conversation", {});
           break;
         case "settings":
           navigate("/settings");
@@ -294,19 +294,19 @@ export function useApp(): UseAppReturn {
   }, []);
 
   return {
-    currentSessionId,
+    currentConversationId,
     currentAgentId,
-    sessions,
+    conversations,
     agents,
     connectionStatus,
     gatewayClient, // Still needed by some components (OnboardingFlow, SettingsPage, etc.)
     setCurrentAgentId,
-    setCurrentSessionId,
-    createSession,
+    setCurrentConversationId,
+    createConversation,
     connect,
-    activeSessionIds,
-    addToActiveSessions,
-    removeFromActiveSessions,
+    activeConversationIds,
+    addToActiveConversations,
+    removeFromActiveConversations,
     messages,
     isSending,
     sendMessage,

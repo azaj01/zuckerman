@@ -50,18 +50,18 @@ function AppRoutes({ app, navigate, location, showConnectionError }: {
 }) {
 
   // Redirect to agent page by default when agent is selected and on home page
-  // But only if there's no current session (user hasn't explicitly selected a session)
+  // But only if there's no current conversation (user hasn't explicitly selected a conversation)
   useEffect(() => {
     if (
       !showConnectionError &&
       !app.showOnboarding &&
       app.currentAgentId &&
       location.pathname === "/" &&
-      !app.currentSessionId
+      !app.currentConversationId
     ) {
       navigate(`/agent/${app.currentAgentId}`);
     }
-  }, [app.currentAgentId, app.currentSessionId, location.pathname, navigate, showConnectionError, app.showOnboarding]);
+  }, [app.currentAgentId, app.currentConversationId, location.pathname, navigate, showConnectionError, app.showOnboarding]);
 
   if (app.showOnboarding) {
     return (
@@ -94,7 +94,7 @@ function AppRoutes({ app, navigate, location, showConnectionError }: {
         <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>
           <Sidebar
             state={app}
-            activeSessionIds={app.activeSessionIds}
+            activeConversationIds={app.activeConversationIds}
             onAction={app.handleSidebarAction}
           />
           <div className="flex flex-col flex-1 overflow-hidden" style={{ minWidth: 0, minHeight: 0 }}>

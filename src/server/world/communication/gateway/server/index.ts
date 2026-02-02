@@ -7,7 +7,7 @@ import { createCoreHandlers } from "./methods.js";
 import { watchForReload, getWatchPaths } from "./reload.js";
 import { initializeChannels } from "@server/world/communication/messengers/channels/factory.js";
 import { loadConfig } from "@server/world/config/index.js";
-import { SessionManager } from "@server/agents/zuckerman/sessions/index.js";
+import { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
 import { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
 import { SimpleRouter } from "@server/world/communication/routing/index.js";
 import { setCronExecutionContext } from "@server/agents/zuckerman/tools/cron/execution-context.js";
@@ -56,17 +56,17 @@ export async function startGatewayServer(
   // Create agent factory (uses registry, no path detection needed)
   const agentFactory = new AgentRuntimeFactory();
   
-  // Router will get session managers from factory per agent
+  // Router will get conversation managers from factory per agent
   const router = new SimpleRouter(agentFactory);
   
-  // Get default session manager for channel initialization and handlers
+  // Get default conversation manager for channel initialization and handlers
   const defaultAgentId = config.agents?.list?.find((a) => a.default)?.id || config.agents?.list?.[0]?.id || "zuckerman";
-  const defaultSessionManager = agentFactory.getSessionManager(defaultAgentId);
+  const defaultConversationManager = agentFactory.getConversationManager(defaultAgentId);
   
   const channelRegistry = await initializeChannels(
     config,
     router,
-    defaultSessionManager,
+    defaultConversationManager,
     agentFactory,
     broadcastEvent,
   );
@@ -84,7 +84,7 @@ export async function startGatewayServer(
   });
 
   const handlers = createCoreHandlers({
-    sessionManager: defaultSessionManager,
+    conversationManager: defaultConversationManager,
     agentFactory,
     router,
     channelRegistry,

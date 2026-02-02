@@ -1,5 +1,5 @@
 import type { GatewayRequestHandlers } from "../types.js";
-import { SessionManager } from "@server/agents/zuckerman/sessions/index.js";
+import { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
 import { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
 import { agentDiscovery } from "@server/agents/discovery.js";
 import { loadConfig } from "@server/world/config/index.js";
@@ -9,7 +9,7 @@ import type { StreamEvent } from "@server/world/runtime/agents/types.js";
 import { sendEvent } from "../connection.js";
 
 export function createAgentHandlers(
-  sessionManager: SessionManager,
+  conversationManager: ConversationManager,
   agentFactory: AgentRuntimeFactory,
 ): Partial<GatewayRequestHandlers> {
   return {
@@ -54,7 +54,7 @@ export function createAgentHandlers(
     },
 
     "agent.run": async ({ respond, params, client }) => {
-      const sessionId = params?.sessionId as string | undefined;
+      const conversationId = params?.conversationId as string | undefined;
       const message = params?.message as string | undefined;
       const config = await loadConfig();
       
@@ -71,10 +71,10 @@ export function createAgentHandlers(
       const model = params?.model as { id: string; name?: string } | undefined;
       const temperature = params?.temperature as number | undefined;
 
-      if (!sessionId) {
+      if (!conversationId) {
         respond(false, undefined, {
           code: "INVALID_REQUEST",
-          message: "Missing sessionId",
+          message: "Missing conversationId",
         });
         return;
       }
@@ -88,30 +88,30 @@ export function createAgentHandlers(
       }
 
       try {
-        // Get the correct SessionManager for this agent
-        const agentSessionManager = agentFactory.getSessionManager(agentId);
+        // Get the correct ConversationManager for this agent
+        const agentConversationManager = agentFactory.getConversationManager(agentId);
         
-        // Get or create session
-        let session = agentSessionManager.getSession(sessionId);
-        let actualSessionId = sessionId;
-        if (!session) {
-          const newSession = agentSessionManager.createSession(`session-${sessionId}`, "main", agentId);
-          session = agentSessionManager.getSession(newSession.id)!;
-          actualSessionId = newSession.id; // Use the actual created session ID
+        // Get or create conversation
+        let conversation = agentConversationManager.getConversation(conversationId);
+        let actualConversationId = conversationId;
+        if (!conversation) {
+          const newConversation = agentConversationManager.createConversation(`conversation-${conversationId}`, "main", agentId);
+          conversation = agentConversationManager.getConversation(newConversation.id)!;
+          actualConversationId = newConversation.id; // Use the actual created conversation ID
         }
 
         // Resolve land directory for this agent
         const landDir = resolveAgentLand(config, agentId);
         const securityContext = await resolveSecurityContext(
           config.security,
-          sessionId,
-          session.session.type,
+          actualConversationId,
+          conversation.conversation.type,
           agentId,
           landDir,
         );
 
-        // Add user message to session (use actualSessionId, not the original sessionId)
-        await agentSessionManager.addMessage(actualSessionId, "user", message);
+        // Add user message to conversation (use actualConversationId, not the original conversationId)
+        await agentConversationManager.addMessage(actualConversationId, "user", message);
 
         // Get agent runtime
         let runtime: any = null;
@@ -167,7 +167,7 @@ export function createAgentHandlers(
               event: `agent.stream.${event.type}`,
               payload: {
                 ...event.data,
-                sessionId: actualSessionId,
+                conversationId: actualConversationId,
               },
             });
           } catch (err) {
@@ -175,9 +175,9 @@ export function createAgentHandlers(
           }
         };
 
-        // Pass security context to runtime (use actualSessionId)
+        // Pass security context to runtime (use actualConversationId)
         const result = await runtime.run({
-          sessionId: actualSessionId,
+          conversationId: actualConversationId,
           message,
           thinkingLevel: thinkingLevel as any,
           model,
@@ -186,8 +186,8 @@ export function createAgentHandlers(
           stream: streamCallback,
         });
 
-        // Add assistant response to session (use actualSessionId)
-        await agentSessionManager.addMessage(actualSessionId, "assistant", result.response);
+        // Add assistant response to conversation (use actualConversationId)
+        await agentConversationManager.addMessage(actualConversationId, "assistant", result.response);
 
         respond(true, {
           runId: result.runId,

@@ -1,10 +1,10 @@
 import type { GatewayClient } from "../gateway/client";
-import type { Session } from "./session";
+import type { Conversation } from "./conversation";
 
 export interface AppState {
-  currentSessionId: string | null;
+  currentConversationId: string | null;
   currentAgentId: string | null;
-  sessions: Session[];
+  conversations: Conversation[];
   agents: string[];
   connectionStatus: "connected" | "disconnected" | "connecting";
   gatewayClient: GatewayClient | null;

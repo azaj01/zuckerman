@@ -114,7 +114,7 @@ export function InspectorView({ gatewayClient, onClose }: GatewayInspectorProps)
               id="method"
               value={method}
               onChange={(e) => setMethod(e.target.value)}
-              placeholder="e.g., agents.list, sessions.get, health"
+              placeholder="e.g., agents.list, conversations.get, health"
               className="font-mono text-sm"
             />
           </div>
@@ -125,7 +125,7 @@ export function InspectorView({ gatewayClient, onClose }: GatewayInspectorProps)
               id="params"
               value={paramsJson}
               onChange={(e) => setParamsJson(e.target.value)}
-              placeholder='{"id": "session-id"}'
+              placeholder='{"id": "conversation-id"}'
               className="font-mono text-sm min-h-[100px]"
             />
           </div>

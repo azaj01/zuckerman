@@ -18,7 +18,7 @@ export function createMemorySearchTool(): Tool {
     definition: {
       name: "memory_search",
       description:
-        "Semantically search MEMORY.md and memory/*.md files (and optional session transcripts) for relevant information. Use this before answering questions about prior work, decisions, dates, people, preferences, or todos. Returns top snippets with path and line numbers.",
+        "Semantically search MEMORY.md and memory/*.md files (and optional conversation transcripts) for relevant information. Use this before answering questions about prior work, decisions, dates, people, preferences, or todos. Returns top snippets with path and line numbers.",
       parameters: {
         type: "object",
         properties: {
@@ -85,7 +85,7 @@ export function createMemorySearchTool(): Tool {
         const results = await manager.search(query, {
           maxResults,
           minScore,
-          sessionKey: executionContext?.sessionId,
+          conversationKey: executionContext?.conversationId,
         });
 
         const status = manager.status();
@@ -265,7 +265,7 @@ export function createMemoryUpdateTool(): Tool {
     definition: {
       name: "memory_update",
       description:
-        "Update or append to long-term memory (MEMORY.md). Use 'mode: append' to add new information, or 'mode: replace' to completely rewrite MEMORY.md with new content. Use this for persistent facts, preferences, or important information that should be remembered across sessions.",
+        "Update or append to long-term memory (MEMORY.md). Use 'mode: append' to add new information, or 'mode: replace' to completely rewrite MEMORY.md with new content. Use this for persistent facts, preferences, or important information that should be remembered across conversations.",
       parameters: {
         type: "object",
         properties: {

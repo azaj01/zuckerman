@@ -1,18 +1,18 @@
 import { existsSync, appendFileSync, readFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
-import type { TranscriptEntry, SessionId } from "./types.js";
+import type { TranscriptEntry, ConversationId } from "./types.js";
 
 /**
- * Resolve transcript file path for a session
+ * Resolve transcript file path for a conversation
  */
 export function resolveTranscriptPath(
   agentId: string,
-  sessionId: SessionId,
+  conversationId: ConversationId,
   stateDir?: string,
 ): string {
   const baseDir = stateDir || join(homedir(), ".zuckerman");
-  return join(baseDir, "agents", agentId, "sessions", `${sessionId}.jsonl`);
+  return join(baseDir, "agents", agentId, "conversations", `${conversationId}.jsonl`);
 }
 
 /**
@@ -78,7 +78,7 @@ function generateTranscriptId(): string {
 }
 
 /**
- * Convert session messages to transcript entries
+ * Convert conversation messages to transcript entries
  */
 export function messagesToTranscriptEntries(
   messages: Array<{

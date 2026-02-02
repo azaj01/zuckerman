@@ -1,14 +1,14 @@
 import type { Router, Route } from "./types.js";
 import type { ChannelMessage } from "@server/world/communication/messengers/channels/types.js";
-import { SessionManager } from "@server/agents/zuckerman/sessions/index.js";
+import { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
 import { resolveAgentRoute, resolveAgentLand } from "./resolver.js";
 import { loadConfig } from "@server/world/config/index.js";
 import type { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
 
 export interface RoutedMessage {
-  sessionId: string;
+  conversationId: string;
   agentId: string;
-  sessionKey: string;
+  conversationKey: string;
   landDir: string;
 }
 
@@ -21,10 +21,10 @@ export class SimpleRouter implements Router {
   }
 
   /**
-   * Get session manager for an agent
+   * Get conversation manager for an agent
    */
-  private getSessionManager(agentId: string): SessionManager {
-    return this.agentFactory.getSessionManager(agentId);
+  private getConversationManager(agentId: string): ConversationManager {
+    return this.agentFactory.getConversationManager(agentId);
   }
 
   addRoute(route: Route): void {
@@ -40,18 +40,18 @@ export class SimpleRouter implements Router {
     for (const route of this.routes) {
       if (route.channelId === message.channelId) {
         if (!route.condition || route.condition(message)) {
-          return route.sessionId;
+          return route.conversationId;
         }
       }
     }
 
-    // Default: use main session for default agent
+    // Default: use main conversation for default agent
     const config = await loadConfig();
     const defaultAgent = config.agents?.list?.find((a) => a.default) || config.agents?.list?.[0];
     const agentId = defaultAgent?.id || "zuckerman";
-    const sessionManager = this.getSessionManager(agentId);
-    const mainSession = sessionManager.getOrCreateMainSession(agentId);
-    return mainSession.id;
+    const conversationManager = this.getConversationManager(agentId);
+    const mainConversation = conversationManager.getOrCreateMainConversation(agentId);
+    return mainConversation.id;
   }
 
   /**
@@ -80,17 +80,17 @@ export class SimpleRouter implements Router {
       teamId: options?.teamId,
     });
 
-    // Get or create session for this route
-    const sessionManager = this.getSessionManager(route.agentId);
-    const session = sessionManager.getOrCreateMainSession(route.agentId);
+    // Get or create conversation for this route
+    const conversationManager = this.getConversationManager(route.agentId);
+    const conversation = conversationManager.getOrCreateMainConversation(route.agentId);
     
     // Resolve land directory
     const landDir = resolveAgentLand(config, route.agentId);
 
     return {
-      sessionId: session.id,
+      conversationId: conversation.id,
       agentId: route.agentId,
-      sessionKey: route.sessionKey,
+      conversationKey: route.conversationKey,
       landDir,
     };
   }

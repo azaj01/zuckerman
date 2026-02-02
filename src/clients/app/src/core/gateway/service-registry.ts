@@ -3,7 +3,7 @@ import { WhatsAppChannelService } from "../channels/whatsapp-channel-service";
 import { TelegramChannelService } from "../channels/telegram-channel-service";
 import { DiscordChannelService } from "../channels/discord-channel-service";
 import { SignalChannelService } from "../channels/signal-channel-service";
-import { SessionService } from "../sessions/session-service";
+import { ConversationService } from "../conversations/conversation-service";
 import { MessageService } from "../messages/message-service";
 import { AgentService } from "../agents/agent-service";
 import { HealthService } from "../health/health-service";
@@ -19,7 +19,7 @@ export interface ServiceContainer {
   signalService: SignalChannelService;
 
   // Core Services
-  sessionService: SessionService;
+  conversationService: ConversationService;
   messageService: MessageService;
   agentService: AgentService;
   healthService: HealthService;
@@ -31,7 +31,7 @@ export interface ServiceContainer {
  * Ensures singleton instances per gateway client:
  * - One instance of each service per GatewayClient
  * - Lazy initialization (services created on first access)
- * - Dependency injection (MessageService gets SessionService from same container)
+ * - Dependency injection (MessageService gets ConversationService from same container)
  */
 export class ServiceRegistry {
   private containers = new Map<GatewayClient, ServiceContainer>();
@@ -70,16 +70,16 @@ export class ServiceRegistry {
 
   /**
    * Create a new service container for a gateway client
-   * Handles dependency injection (e.g., MessageService → SessionService)
+   * Handles dependency injection (e.g., MessageService → ConversationService)
    */
   private createContainer(client: GatewayClient): ServiceContainer {
     // Create core services first (no dependencies)
-    const sessionService = new SessionService(client);
+    const conversationService = new ConversationService(client);
     const agentService = new AgentService(client);
     const healthService = new HealthService(client);
 
-    // Create MessageService with SessionService dependency injection
-    const messageService = new MessageService(client, sessionService);
+    // Create MessageService with ConversationService dependency injection
+    const messageService = new MessageService(client, conversationService);
 
     // Create channel services
     const whatsappService = new WhatsAppChannelService(client);
@@ -92,7 +92,7 @@ export class ServiceRegistry {
       telegramService,
       discordService,
       signalService,
-      sessionService,
+      conversationService,
       messageService,
       agentService,
       healthService,

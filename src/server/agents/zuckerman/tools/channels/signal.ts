@@ -1,8 +1,8 @@
 import type { Tool } from "../terminal/index.js";
 import { isToolAllowed } from "@server/world/execution/security/policy/tool-policy.js";
 import { getChannelRegistry } from "./registry.js";
-import { SessionManager } from "@server/agents/zuckerman/sessions/index.js";
-import { loadSessionStore, resolveSessionStorePath } from "@server/agents/zuckerman/sessions/store.js";
+import { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
+import { loadConversationStore, resolveConversationStorePath } from "@server/agents/zuckerman/conversations/store.js";
 
 export function createSignalTool(): Tool {
   return {
@@ -43,30 +43,30 @@ export function createSignalTool(): Tool {
           };
         }
 
-        // Try to auto-detect phone number from session if not provided
+        // Try to auto-detect phone number from conversation if not provided
         let phoneNumber = to;
         if (!phoneNumber || phoneNumber === "me" || phoneNumber.toLowerCase() === "myself") {
-          if (executionContext?.sessionId && securityContext?.agentId) {
+          if (executionContext?.conversationId && securityContext?.agentId) {
             try {
-              // Load session store to get delivery context
-              const storePath = resolveSessionStorePath(securityContext.agentId);
-              const store = loadSessionStore(storePath);
+              // Load conversation store to get delivery context
+              const storePath = resolveConversationStorePath(securityContext.agentId);
+              const store = loadConversationStore(storePath);
               
-              // Find session entry by sessionId
-              const sessionEntry = Object.values(store).find(
-                entry => entry.sessionId === executionContext.sessionId
+              // Find conversation entry by conversationId
+              const conversationEntry = Object.values(store).find(
+                entry => entry.conversationId === executionContext.conversationId
               );
               
               // Try to get phone number from delivery context
-              if (sessionEntry) {
-                // Check if this session is from Signal channel
-                if (sessionEntry.lastChannel === "signal" || sessionEntry.origin?.channel === "signal") {
-                  phoneNumber = sessionEntry.deliveryContext?.to || 
-                                sessionEntry.lastTo;
+              if (conversationEntry) {
+                // Check if this conversation is from Signal channel
+                if (conversationEntry.lastChannel === "signal" || conversationEntry.origin?.channel === "signal") {
+                  phoneNumber = conversationEntry.deliveryContext?.to || 
+                                conversationEntry.lastTo;
                 }
               }
             } catch (err) {
-              console.warn("[Signal] Failed to load session for auto-detection:", err);
+              console.warn("[Signal] Failed to load conversation for auto-detection:", err);
             }
           }
           

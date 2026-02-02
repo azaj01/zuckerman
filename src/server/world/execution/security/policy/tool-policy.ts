@@ -6,7 +6,7 @@ import type { ToolPolicy } from "../types.js";
 const TOOL_GROUPS: Record<string, string[]> = {
   "group:runtime": ["terminal", "exec", "process", "bash"],
   "group:fs": ["read", "write", "edit", "apply_patch"],
-  "group:sessions": ["sessions_list", "sessions_history", "sessions_send", "sessions_spawn", "session_status"],
+  "group:conversations": ["conversations_list", "conversations_history", "conversations_send", "conversations_spawn", "conversation_status"],
   "group:memory": ["memory_search", "memory_get"],
   "group:ui": ["browser", "canvas"],
   "group:automation": ["cron", "gateway"],
@@ -18,20 +18,20 @@ const TOOL_GROUPS: Record<string, string[]> = {
  * Tool profiles that define base allowlists
  */
 const TOOL_PROFILES: Record<string, string[]> = {
-  minimal: ["session_status"],
+  minimal: ["conversation_status"],
   coding: [
     "group:fs",
     "group:runtime",
-    "group:sessions",
+    "group:conversations",
     "group:memory",
     "image",
   ],
   messaging: [
     "group:messaging",
-    "sessions_list",
-    "sessions_history",
-    "sessions_send",
-    "session_status",
+    "conversations_list",
+    "conversations_history",
+    "conversations_send",
+    "conversation_status",
   ],
   full: [], // Empty means all tools allowed
 };

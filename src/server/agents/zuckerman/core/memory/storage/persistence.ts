@@ -49,10 +49,10 @@ export function resolveLongTermMemoryPath(landDir: string): string {
 }
 
 /**
- * Load memory files for session start
+ * Load memory files for conversation start
  * Returns today + yesterday daily logs + long-term memory
  */
-export function loadMemoryForSession(landDir: string): {
+export function loadMemoryForConversation(landDir: string): {
   dailyLogs: Map<string, string>;
   longTermMemory: string;
 } {

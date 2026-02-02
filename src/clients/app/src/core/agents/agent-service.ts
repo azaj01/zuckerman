@@ -17,12 +17,12 @@ export class AgentService {
   }
 
   async runAgent(
-    sessionId: string,
+    conversationId: string,
     agentId: string,
     message: string
   ): Promise<unknown> {
     const response = await this.client.request("agent.run", {
-      sessionId,
+      conversationId,
       agentId,
       message,
     });

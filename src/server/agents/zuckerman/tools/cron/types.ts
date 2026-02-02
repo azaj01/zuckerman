@@ -10,8 +10,8 @@ export interface RecurrenceRule {
 export interface EventAction {
   type: "agentTurn" | "systemEvent";
   agentId?: string; // Defaults to current agent
-  sessionTarget?: "main" | "isolated"; // Defaults to "isolated"
-  sessionIdSource?: string; // Session ID that created this cron event
+  conversationTarget?: "main" | "isolated"; // Defaults to "isolated"
+  conversationIdSource?: string; // Conversation ID that created this cron event
   contextMessage?: string;
   actionMessage: string;
 }

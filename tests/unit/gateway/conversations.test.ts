@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import WebSocket from "ws";
 import { startGatewayServer } from "@world/communication/gateway/server/index.js";
 
-describe("Gateway Sessions", () => {
+describe("Gateway Conversations", () => {
   let server: Awaited<ReturnType<typeof startGatewayServer>>;
   const port = 18791;
 
@@ -41,76 +41,76 @@ describe("Gateway Sessions", () => {
     });
   }
 
-  it("should create a session", async () => {
+  it("should create a conversation", async () => {
     const ws = await createClient();
-    const response = await sendRequest(ws, "sessions.create", {
-      label: "test-session",
+    const response = await sendRequest(ws, "conversations.create", {
+      label: "test-conversation",
       type: "main",
     });
 
     expect(response.ok).toBe(true);
-    expect(response.result.session).toHaveProperty("id");
-    expect(response.result.session.label).toBe("test-session");
-    expect(response.result.session.type).toBe("main");
+    expect(response.result.conversation).toHaveProperty("id");
+    expect(response.result.conversation.label).toBe("test-conversation");
+    expect(response.result.conversation.type).toBe("main");
     
     ws.close();
   });
 
-  it("should list sessions", async () => {
+  it("should list conversations", async () => {
     const ws = await createClient();
     
-    // Create a session first
-    const createResponse = await sendRequest(ws, "sessions.create", {
+    // Create a conversation first
+    const createResponse = await sendRequest(ws, "conversations.create", {
       label: "list-test",
       type: "main",
     });
     expect(createResponse.ok).toBe(true);
 
-    // List sessions
-    const listResponse = await sendRequest(ws, "sessions.list");
+    // List conversations
+    const listResponse = await sendRequest(ws, "conversations.list");
     expect(listResponse.ok).toBe(true);
-    expect(Array.isArray(listResponse.result.sessions)).toBe(true);
-    expect(listResponse.result.sessions.length).toBeGreaterThan(0);
+    expect(Array.isArray(listResponse.result.conversations)).toBe(true);
+    expect(listResponse.result.conversations.length).toBeGreaterThan(0);
     
     ws.close();
   });
 
-  it("should get a session by id", async () => {
+  it("should get a conversation by id", async () => {
     const ws = await createClient();
     
-    // Create a session
-    const createResponse = await sendRequest(ws, "sessions.create", {
+    // Create a conversation
+    const createResponse = await sendRequest(ws, "conversations.create", {
       label: "get-test",
       type: "main",
     });
-    const sessionId = createResponse.result.session.id;
+    const conversationId = createResponse.result.conversation.id;
 
-    // Get the session
-    const getResponse = await sendRequest(ws, "sessions.get", { id: sessionId });
+    // Get the conversation
+    const getResponse = await sendRequest(ws, "conversations.get", { id: conversationId });
     expect(getResponse.ok).toBe(true);
-    expect(getResponse.result.session.session.id).toBe(sessionId);
-    expect(getResponse.result.session).toHaveProperty("messages");
+    expect(getResponse.result.conversation.conversation.id).toBe(conversationId);
+    expect(getResponse.result.conversation).toHaveProperty("messages");
     
     ws.close();
   });
 
-  it("should delete a session", async () => {
+  it("should delete a conversation", async () => {
     const ws = await createClient();
     
-    // Create a session
-    const createResponse = await sendRequest(ws, "sessions.create", {
+    // Create a conversation
+    const createResponse = await sendRequest(ws, "conversations.create", {
       label: "delete-test",
       type: "main",
     });
-    const sessionId = createResponse.result.session.id;
+    const conversationId = createResponse.result.conversation.id;
 
-    // Delete the session
-    const deleteResponse = await sendRequest(ws, "sessions.delete", { id: sessionId });
+    // Delete the conversation
+    const deleteResponse = await sendRequest(ws, "conversations.delete", { id: conversationId });
     expect(deleteResponse.ok).toBe(true);
     expect(deleteResponse.result.deleted).toBe(true);
 
     // Verify it's deleted
-    const getResponse = await sendRequest(ws, "sessions.get", { id: sessionId });
+    const getResponse = await sendRequest(ws, "conversations.get", { id: conversationId });
     expect(getResponse.ok).toBe(false);
     expect(getResponse.error?.code).toBe("NOT_FOUND");
     

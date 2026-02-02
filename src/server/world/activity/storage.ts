@@ -83,7 +83,7 @@ export async function saveActivity(activity: Activity): Promise<void> {
  * Query activities
  */
 export function queryActivities(query: ActivityQuery): Activity[] {
-  const { from, to, agentId, sessionId, type, limit, offset = 0 } = query;
+  const { from, to, agentId, conversationId, type, limit, offset = 0 } = query;
   
   // Determine date range
   const now = Date.now();
@@ -110,7 +110,7 @@ export function queryActivities(query: ActivityQuery): Activity[] {
       return false;
     }
     
-    if (sessionId && activity.sessionId !== sessionId) {
+    if (conversationId && activity.conversationId !== conversationId) {
       return false;
     }
     

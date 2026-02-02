@@ -32,9 +32,9 @@ export interface BatchExecutionContext {
   getAvailableTools: () => string[];
   
   /**
-   * Session ID for tracking
+   * Conversation ID for tracking
    */
-  sessionId: string;
+  conversationId: string;
 }
 
 /**

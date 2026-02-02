@@ -12,7 +12,7 @@ export type MemorySearchResult = {
   endLine: number;
   score: number;
   snippet: string;
-  source: "memory" | "sessions";
+  source: "memory" | "conversations";
 };
 
 export interface MemorySearchManager {
@@ -24,7 +24,7 @@ export interface MemorySearchManager {
     opts?: {
       maxResults?: number;
       minScore?: number;
-      sessionKey?: string;
+      conversationKey?: string;
     },
   ): Promise<MemorySearchResult[]>;
 
@@ -48,7 +48,7 @@ export interface MemorySearchManager {
     dbPath: string;
     provider: string;
     model: string;
-    sources: Array<"memory" | "sessions">;
+    sources: Array<"memory" | "conversations">;
   };
 
   /**
@@ -97,7 +97,7 @@ export async function getMemorySearchManager(params: {
     // - Embedding provider integration (OpenAI/Gemini/local)
     // - Hybrid search (vector + FTS)
     // - File watching and syncing
-    // - Session transcript indexing
+    // - Conversation transcript indexing
 
     // For now, return a basic implementation that uses the existing persistence system
     const manager: MemorySearchManager = {

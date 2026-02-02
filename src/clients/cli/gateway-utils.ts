@@ -79,7 +79,7 @@ export async function ensureGatewayRunning(host: string, port: number): Promise<
     // Cleanup on exit
     const cleanup = async () => {
       if (gatewayServer) {
-        await gatewayServer.close("Agent session ended");
+        await gatewayServer.close("Agent conversation ended");
         gatewayServer = null;
       }
     };

@@ -3,13 +3,13 @@ import { GatewayClient } from "../gateway-client.js";
 import { ensureGatewayRunning } from "../gateway-utils.js";
 import { outputJson, shouldOutputJson, parseJsonInput } from "../utils/json-output.js";
 
-export function createSessionsCommand(): Command {
-  const cmd = new Command("sessions")
-    .description("Manage sessions (conversation state)");
+export function createConversationsCommand(): Command {
+  const cmd = new Command("conversations")
+    .description("Manage conversations");
 
   cmd
     .command("list")
-    .description("List all sessions")
+    .description("List all conversations")
     .option("--host <host>", "Gateway host", "127.0.0.1")
     .option("--port <port>", "Gateway port", "18789")
     .option("--json", "Output as JSON")
@@ -22,15 +22,15 @@ export function createSessionsCommand(): Command {
       const client = new GatewayClient({ host, port });
       try {
         await client.connect();
-        const response = await client.call({ method: "sessions.list" });
+        const response = await client.call({ method: "conversations.list" });
 
         if (!response.ok || !response.result) {
-          console.error("Failed to list sessions:", response.error?.message);
+          console.error("Failed to list conversations:", response.error?.message);
           process.exit(1);
         }
 
         const result = response.result as {
-          sessions: Array<{
+          conversations: Array<{
             id: string;
             label: string;
             type: string;
@@ -39,23 +39,23 @@ export function createSessionsCommand(): Command {
             lastActivity: number;
           }>;
         };
-        const sessions = result.sessions || [];
+        const conversations = result.conversations || [];
 
         if (shouldOutputJson(options)) {
-          outputJson({ sessions }, options);
+          outputJson({ conversations }, options);
         } else {
-          if (sessions.length === 0) {
-            console.log("No sessions found.");
+          if (conversations.length === 0) {
+            console.log("No conversations found.");
           } else {
-            console.log("Sessions:");
-            sessions.forEach((session) => {
-              const created = new Date(session.createdAt).toLocaleString();
-              const lastActivity = new Date(session.lastActivity).toLocaleString();
-              console.log(`  ${session.id.slice(0, 8)}...`);
-              console.log(`    Label: ${session.label}`);
-              console.log(`    Type: ${session.type}`);
-              if (session.agentId) {
-                console.log(`    Agent: ${session.agentId}`);
+            console.log("Conversations:");
+            conversations.forEach((conversation) => {
+              const created = new Date(conversation.createdAt).toLocaleString();
+              const lastActivity = new Date(conversation.lastActivity).toLocaleString();
+              console.log(`  ${conversation.id.slice(0, 8)}...`);
+              console.log(`    Label: ${conversation.label}`);
+              console.log(`    Type: ${conversation.type}`);
+              if (conversation.agentId) {
+                console.log(`    Agent: ${conversation.agentId}`);
               }
               console.log(`    Created: ${created}`);
               console.log(`    Last Activity: ${lastActivity}`);
@@ -74,12 +74,12 @@ export function createSessionsCommand(): Command {
 
   cmd
     .command("get")
-    .description("Get session details")
-    .argument("<session-id>", "Session ID")
+    .description("Get conversation details")
+    .argument("<conversation-id>", "Conversation ID")
     .option("--host <host>", "Gateway host", "127.0.0.1")
     .option("--port <port>", "Gateway port", "18789")
     .option("--json", "Output as JSON")
-    .action(async (sessionId: string, options: { host?: string; port?: string; json?: boolean }) => {
+    .action(async (conversationId: string, options: { host?: string; port?: string; json?: boolean }) => {
       const host = options.host ?? "127.0.0.1";
       const port = options.port ? parseInt(options.port, 10) : 18789;
 
@@ -89,18 +89,18 @@ export function createSessionsCommand(): Command {
       try {
         await client.connect();
         const response = await client.call({
-          method: "sessions.get",
-          params: { id: sessionId },
+          method: "conversations.get",
+          params: { id: conversationId },
         });
 
         if (!response.ok || !response.result) {
-          console.error("Failed to get session:", response.error?.message);
+          console.error("Failed to get conversation:", response.error?.message);
           process.exit(1);
         }
 
         const result = response.result as {
-          session: {
-            session: {
+          conversation: {
+            conversation: {
               id: string;
               label: string;
               type: string;
@@ -116,19 +116,19 @@ export function createSessionsCommand(): Command {
           };
         };
 
-        const { session, messages } = result.session;
+        const { conversation, messages } = result.conversation;
 
         if (shouldOutputJson(options)) {
-          outputJson({ session, messages }, options);
+          outputJson({ conversation, messages }, options);
         } else {
-          console.log(`Session: ${session.id}`);
-          console.log(`Label: ${session.label}`);
-          console.log(`Type: ${session.type}`);
-          if (session.agentId) {
-            console.log(`Agent: ${session.agentId}`);
+          console.log(`Conversation: ${conversation.id}`);
+          console.log(`Label: ${conversation.label}`);
+          console.log(`Type: ${conversation.type}`);
+          if (conversation.agentId) {
+            console.log(`Agent: ${conversation.agentId}`);
           }
-          console.log(`Created: ${new Date(session.createdAt).toLocaleString()}`);
-          console.log(`Last Activity: ${new Date(session.lastActivity).toLocaleString()}`);
+          console.log(`Created: ${new Date(conversation.createdAt).toLocaleString()}`);
+          console.log(`Last Activity: ${new Date(conversation.lastActivity).toLocaleString()}`);
           console.log(`Messages: ${messages.length}`);
           console.log();
 
@@ -152,14 +152,14 @@ export function createSessionsCommand(): Command {
 
   cmd
     .command("create")
-    .description("Create a new session")
-    .option("--type <type>", "Session type (main, group, channel)", "main")
+    .description("Create a new conversation")
+    .option("--type <type>", "Conversation type (main, group, channel)", "main")
     .option("--agent-id <agent-id>", "Agent ID")
-    .option("--label <label>", "Session label")
+    .option("--label <label>", "Conversation label")
     .option("--host <host>", "Gateway host", "127.0.0.1")
     .option("--port <port>", "Gateway port", "18789")
     .option("--json", "Output as JSON")
-    .option("--input <json>", "JSON input for session data (or pipe JSON)")
+    .option("--input <json>", "JSON input for conversation data (or pipe JSON)")
     .action(async (options: {
       type?: string;
       agentId?: string;
@@ -179,38 +179,38 @@ export function createSessionsCommand(): Command {
         await client.connect();
 
         // Parse JSON input if provided (only if --input is used)
-        let sessionData: { type?: string; agentId?: string; label?: string } = {};
+        let conversationData: { type?: string; agentId?: string; label?: string } = {};
         if (options.input) {
           const input = await parseJsonInput(options.input);
-          sessionData = input as typeof sessionData;
+          conversationData = input as typeof conversationData;
         }
 
         const params = {
-          type: sessionData.type || options.type || "main",
-          agentId: sessionData.agentId || options.agentId,
-          label: sessionData.label || options.label || `session-${Date.now()}`,
+          type: conversationData.type || options.type || "main",
+          agentId: conversationData.agentId || options.agentId,
+          label: conversationData.label || options.label || `conversation-${Date.now()}`,
         };
 
         const response = await client.call({
-          method: "sessions.create",
+          method: "conversations.create",
           params,
         });
 
         if (!response.ok || !response.result) {
-          console.error("Failed to create session:", response.error?.message);
+          console.error("Failed to create conversation:", response.error?.message);
           process.exit(1);
         }
 
-        const result = response.result as { session: { id: string; label: string; type: string; agentId?: string } };
+        const result = response.result as { conversation: { id: string; label: string; type: string; agentId?: string } };
 
         if (shouldOutputJson(options)) {
           outputJson(result, options);
         } else {
-          console.log(`Session created: ${result.session.id}`);
-          console.log(`Label: ${result.session.label}`);
-          console.log(`Type: ${result.session.type}`);
-          if (result.session.agentId) {
-            console.log(`Agent: ${result.session.agentId}`);
+          console.log(`Conversation created: ${result.conversation.id}`);
+          console.log(`Label: ${result.conversation.label}`);
+          console.log(`Type: ${result.conversation.type}`);
+          if (result.conversation.agentId) {
+            console.log(`Agent: ${result.conversation.agentId}`);
           }
         }
 
@@ -224,12 +224,12 @@ export function createSessionsCommand(): Command {
 
   cmd
     .command("delete")
-    .description("Delete a session")
-    .argument("<session-id>", "Session ID")
+    .description("Delete a conversation")
+    .argument("<conversation-id>", "Conversation ID")
     .option("--host <host>", "Gateway host", "127.0.0.1")
     .option("--port <port>", "Gateway port", "18789")
     .option("--json", "Output as JSON")
-    .action(async (sessionId: string, options: { host?: string; port?: string; json?: boolean }) => {
+    .action(async (conversationId: string, options: { host?: string; port?: string; json?: boolean }) => {
       const host = options.host ?? "127.0.0.1";
       const port = options.port ? parseInt(options.port, 10) : 18789;
 
@@ -239,19 +239,19 @@ export function createSessionsCommand(): Command {
       try {
         await client.connect();
         const response = await client.call({
-          method: "sessions.delete",
-          params: { id: sessionId },
+          method: "conversations.delete",
+          params: { id: conversationId },
         });
 
         if (!response.ok) {
-          console.error("Failed to delete session:", response.error?.message);
+          console.error("Failed to delete conversation:", response.error?.message);
           process.exit(1);
         }
 
         if (shouldOutputJson(options)) {
-          outputJson({ deleted: true, sessionId }, options);
+          outputJson({ deleted: true, conversationId }, options);
         } else {
-          console.log(`Session ${sessionId} deleted.`);
+          console.log(`Conversation ${conversationId} deleted.`);
         }
         client.disconnect();
       } catch (err) {
@@ -263,16 +263,16 @@ export function createSessionsCommand(): Command {
 
   cmd
     .command("send")
-    .description("Send a message to a session")
-    .argument("<session-id>", "Session ID")
+    .description("Send a message to a conversation")
+    .argument("<conversation-id>", "Conversation ID")
     .option("-m, --message <message>", "Message to send")
-    .option("-a, --agent <agent-id>", "Agent ID (required if session doesn't have one)")
+    .option("-a, --agent <agent-id>", "Agent ID (required if conversation doesn't have one)")
     .option("--host <host>", "Gateway host", "127.0.0.1")
     .option("--port <port>", "Gateway port", "18789")
     .option("--json", "Output as JSON")
     .option("--input <json>", "JSON input for message data (or pipe JSON)")
     .action(async (
-      sessionId: string,
+      conversationId: string,
       options: {
         message?: string;
         agent?: string;
@@ -304,30 +304,30 @@ export function createSessionsCommand(): Command {
           process.exit(1);
         }
 
-        // Get session to find agentId if not provided
+        // Get conversation to find agentId if not provided
         let agentId = messageData.agentId || options.agent;
         if (!agentId) {
-          const sessionResponse = await client.call({
-            method: "sessions.get",
-            params: { id: sessionId },
+          const conversationResponse = await client.call({
+            method: "conversations.get",
+            params: { id: conversationId },
           });
-          if (sessionResponse.ok && sessionResponse.result) {
-            const sessionResult = sessionResponse.result as {
-              session: { session?: { agentId?: string } };
+          if (conversationResponse.ok && conversationResponse.result) {
+            const conversationResult = conversationResponse.result as {
+              conversation: { conversation?: { agentId?: string } };
             };
-            agentId = sessionResult.session?.session?.agentId;
+            agentId = conversationResult.conversation?.conversation?.agentId;
           }
         }
 
         if (!agentId) {
-          console.error("Error: Agent ID is required. Use --agent <agent-id> or ensure session has an agentId");
+          console.error("Error: Agent ID is required. Use --agent <agent-id> or ensure conversation has an agentId");
           process.exit(1);
         }
 
         const response = await client.call({
           method: "agent.run",
           params: {
-            sessionId,
+            conversationId,
             agentId,
             message,
           },
@@ -365,14 +365,14 @@ export function createSessionsCommand(): Command {
 
   cmd
     .command("messages")
-    .description("List messages in a session")
-    .argument("<session-id>", "Session ID")
+    .description("List messages in a conversation")
+    .argument("<conversation-id>", "Conversation ID")
     .option("--host <host>", "Gateway host", "127.0.0.1")
     .option("--port <port>", "Gateway port", "18789")
     .option("--json", "Output as JSON")
     .option("--limit <number>", "Limit number of messages to show", "100")
     .action(async (
-      sessionId: string,
+      conversationId: string,
       options: {
         host?: string;
         port?: string;
@@ -390,18 +390,18 @@ export function createSessionsCommand(): Command {
       try {
         await client.connect();
         const response = await client.call({
-          method: "sessions.get",
-          params: { id: sessionId },
+          method: "conversations.get",
+          params: { id: conversationId },
         });
 
         if (!response.ok || !response.result) {
-          console.error("Failed to get session:", response.error?.message);
+          console.error("Failed to get conversation:", response.error?.message);
           process.exit(1);
         }
 
         const result = response.result as {
-          session: {
-            session?: {
+          conversation: {
+            conversation?: {
               id: string;
               label?: string;
               type?: string;
@@ -419,22 +419,22 @@ export function createSessionsCommand(): Command {
           };
         };
 
-        const { session: sessionInfo, messages } = result.session;
+        const { conversation: conversationInfo, messages } = result.conversation;
         const messageList = (messages || []).slice(-limit);
 
         if (shouldOutputJson(options)) {
-          outputJson({ session: sessionInfo, messages: messageList }, options);
+          outputJson({ conversation: conversationInfo, messages: messageList }, options);
         } else {
-          if (sessionInfo) {
-            console.log(`Session: ${sessionInfo.id}`);
-            if (sessionInfo.label) console.log(`Label: ${sessionInfo.label}`);
-            if (sessionInfo.type) console.log(`Type: ${sessionInfo.type}`);
-            if (sessionInfo.agentId) console.log(`Agent: ${sessionInfo.agentId}`);
-            if (sessionInfo.createdAt) {
-              console.log(`Created: ${new Date(sessionInfo.createdAt).toLocaleString()}`);
+          if (conversationInfo) {
+            console.log(`Conversation: ${conversationInfo.id}`);
+            if (conversationInfo.label) console.log(`Label: ${conversationInfo.label}`);
+            if (conversationInfo.type) console.log(`Type: ${conversationInfo.type}`);
+            if (conversationInfo.agentId) console.log(`Agent: ${conversationInfo.agentId}`);
+            if (conversationInfo.createdAt) {
+              console.log(`Created: ${new Date(conversationInfo.createdAt).toLocaleString()}`);
             }
-            if (sessionInfo.lastActivity) {
-              console.log(`Last Activity: ${new Date(sessionInfo.lastActivity).toLocaleString()}`);
+            if (conversationInfo.lastActivity) {
+              console.log(`Last Activity: ${new Date(conversationInfo.lastActivity).toLocaleString()}`);
             }
             console.log(`Messages: ${messageList.length}${messages && messages.length > limit ? ` (showing last ${limit} of ${messages.length})` : ""}`);
             console.log();
@@ -448,7 +448,7 @@ export function createSessionsCommand(): Command {
               console.log(msg.content);
             });
           } else {
-            console.log("No messages in this session.");
+            console.log("No messages in this conversation.");
           }
         }
 

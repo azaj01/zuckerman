@@ -1,10 +1,10 @@
 import type { GatewayRequestHandlers } from "./types.js";
-import type { SessionManager } from "@server/agents/zuckerman/sessions/index.js";
+import type { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
 import type { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
 import type { ChannelRegistry } from "@server/world/communication/messengers/channels/index.js";
 import type { SimpleRouter } from "@server/world/communication/routing/index.js";
 import { createHealthHandlers } from "./handlers/health.js";
-import { createSessionHandlers } from "./handlers/sessions.js";
+import { createConversationHandlers } from "./handlers/conversations.js";
 import { createAgentHandlers } from "./handlers/agents.js";
 import { createChannelHandlers } from "./handlers/channels.js";
 import { createConfigHandlers } from "./handlers/config.js";
@@ -12,7 +12,7 @@ import { createTextToSpeechHandlers } from "./handlers/text-to-speech.js";
 import { createActivityHandlers } from "./handlers/activities.js";
 
 export interface CoreHandlersDeps {
-  sessionManager: SessionManager;
+  conversationManager: ConversationManager;
   agentFactory: AgentRuntimeFactory;
   router: SimpleRouter;
   channelRegistry: ChannelRegistry | null;
@@ -20,13 +20,13 @@ export interface CoreHandlersDeps {
 }
 
 export function createCoreHandlers(deps: CoreHandlersDeps): GatewayRequestHandlers {
-  const { sessionManager, agentFactory, router, channelRegistry, broadcastEvent } = deps;
+  const { conversationManager, agentFactory, router, channelRegistry, broadcastEvent } = deps;
   
   const healthHandlers = createHealthHandlers();
-  const sessionHandlers = createSessionHandlers(agentFactory);
-  const agentHandlers = createAgentHandlers(sessionManager, agentFactory);
+  const conversationHandlers = createConversationHandlers(agentFactory);
+  const agentHandlers = createAgentHandlers(conversationManager, agentFactory);
   const channelHandlers = channelRegistry 
-    ? createChannelHandlers(channelRegistry, router, sessionManager, agentFactory, broadcastEvent)
+    ? createChannelHandlers(channelRegistry, router, conversationManager, agentFactory, broadcastEvent)
     : {};
   const configHandlers = createConfigHandlers();
   const textToSpeechHandlers = createTextToSpeechHandlers();
@@ -39,7 +39,7 @@ export function createCoreHandlers(deps: CoreHandlersDeps): GatewayRequestHandle
     if (handler) handlers[key] = handler;
   }
   
-  for (const [key, handler] of Object.entries(sessionHandlers)) {
+  for (const [key, handler] of Object.entries(conversationHandlers)) {
     if (handler) handlers[key] = handler;
   }
   

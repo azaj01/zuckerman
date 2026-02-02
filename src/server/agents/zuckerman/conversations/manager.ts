@@ -2,18 +2,18 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type {
-  Session,
-  SessionId,
-  SessionKey,
-  SessionLabel,
-  SessionType,
-  SessionState,
-  SessionEntry,
+  Conversation,
+  ConversationId,
+  ConversationKey,
+  ConversationLabel,
+  ConversationType,
+  ConversationState,
+  ConversationEntry,
 } from "./types.js";
 import {
-  loadSessionStore,
-  saveSessionStore,
-  resolveSessionStorePath,
+  loadConversationStore,
+  saveConversationStore,
+  resolveConversationStorePath,
 } from "./store.js";
 import {
   appendTranscriptEntry,
@@ -24,13 +24,13 @@ import {
 import { activityRecorder } from "@server/world/activity/index.js";
 
 /**
- * Derive session key from agent ID and session type/label
+ * Derive conversation key from agent ID and conversation type/label
  */
-export function deriveSessionKey(
+export function deriveConversationKey(
   agentId: string,
-  type: SessionType,
-  label?: SessionLabel,
-): SessionKey {
+  type: ConversationType,
+  label?: ConversationLabel,
+): ConversationKey {
   if (type === "main") {
     return `agent:${agentId}:main`;
   }
@@ -40,31 +40,31 @@ export function deriveSessionKey(
   return `agent:${agentId}:${label || "default"}`;
 }
 
-export class SessionManager {
-  private sessions = new Map<SessionId, SessionState>();
+export class ConversationManager {
+  private conversations = new Map<ConversationId, ConversationState>();
   private storePath: string;
   private stateDir: string;
   private agentId: string;
-  private writeLocks = new Map<SessionId, Promise<void>>();
+  private writeLocks = new Map<ConversationId, Promise<void>>();
 
   constructor(agentId: string, stateDir?: string) {
     this.agentId = agentId;
     this.stateDir = stateDir || join(homedir(), ".zuckerman");
-    this.storePath = resolveSessionStorePath(agentId, this.stateDir);
-    this.loadSessions();
+    this.storePath = resolveConversationStorePath(agentId, this.stateDir);
+    this.loadConversations();
   }
 
   /**
-   * Load sessions from persistent store
+   * Load conversations from persistent store
    */
-  private loadSessions(): void {
+  private loadConversations(): void {
     try {
-      const store = loadSessionStore(this.storePath);
-      for (const [sessionKey, entry] of Object.entries(store)) {
-        // Load transcript for this session
+      const store = loadConversationStore(this.storePath);
+      for (const [conversationKey, entry] of Object.entries(store)) {
+        // Load transcript for this conversation
         const transcriptPath = resolveTranscriptPath(
           this.agentId,
-          entry.sessionId,
+          entry.conversationId,
           this.stateDir,
         );
         const transcriptEntries = loadTranscript(transcriptPath);
@@ -78,42 +78,42 @@ export class SessionManager {
           toolCalls: entry.toolCalls,
         }));
 
-        const session: Session = {
-          id: entry.sessionId,
-          label: entry.displayName || sessionKey,
-          type: this.inferSessionType(sessionKey),
+        const conversation: Conversation = {
+          id: entry.conversationId,
+          label: entry.displayName || conversationKey,
+          type: this.inferConversationType(conversationKey),
           createdAt: entry.createdAt || entry.updatedAt,
           lastActivity: entry.updatedAt,
           agentId: entry.agentId || this.agentId,
         };
 
-        const state: SessionState = {
-          session,
+        const state: ConversationState = {
+          conversation,
           messages,
         };
 
-        this.sessions.set(entry.sessionId, state);
+        this.conversations.set(entry.conversationId, state);
       }
     } catch (error) {
-      console.warn(`Failed to load sessions for agent ${this.agentId}:`, error);
+      console.warn(`Failed to load conversations for agent ${this.agentId}:`, error);
     }
   }
 
   /**
-   * Infer session type from session key
+   * Infer conversation type from conversation key
    */
-  private inferSessionType(sessionKey: SessionKey): SessionType {
-    if (sessionKey.includes(":main")) return "main";
-    if (sessionKey.includes(":group:")) return "group";
-    if (sessionKey.includes(":channel:")) return "channel";
+  private inferConversationType(conversationKey: ConversationKey): ConversationType {
+    if (conversationKey.includes(":main")) return "main";
+    if (conversationKey.includes(":group:")) return "group";
+    if (conversationKey.includes(":channel:")) return "channel";
     return "main";
   }
 
   /**
-   * Acquire write lock for a session
+   * Acquire write lock for a conversation
    */
-  private async acquireWriteLock(sessionId: SessionId): Promise<() => void> {
-    const existingLock = this.writeLocks.get(sessionId);
+  private async acquireWriteLock(conversationId: ConversationId): Promise<() => void> {
+    const existingLock = this.writeLocks.get(conversationId);
     if (existingLock) {
       await existingLock;
     }
@@ -122,35 +122,35 @@ export class SessionManager {
     const lockPromise = new Promise<void>((resolve) => {
       releaseLock = resolve;
     });
-    this.writeLocks.set(sessionId, lockPromise);
+    this.writeLocks.set(conversationId, lockPromise);
 
     return () => {
       releaseLock();
-      this.writeLocks.delete(sessionId);
+      this.writeLocks.delete(conversationId);
     };
   }
 
   /**
-   * Persist sessions to disk (only metadata, not transcripts)
+   * Persist conversations to disk (only metadata, not transcripts)
    */
-  private async persistSessions(): Promise<void> {
-    const store: Record<SessionKey, SessionEntry> = {};
-    const existingStore = loadSessionStore(this.storePath);
+  private async persistConversations(): Promise<void> {
+    const store: Record<ConversationKey, ConversationEntry> = {};
+    const existingStore = loadConversationStore(this.storePath);
 
-    for (const [sessionId, state] of this.sessions.entries()) {
-      const sessionKey = deriveSessionKey(
+    for (const [conversationId, state] of this.conversations.entries()) {
+      const conversationKey = deriveConversationKey(
         this.agentId,
-        state.session.type,
-        state.session.label,
+        state.conversation.type,
+        state.conversation.label,
       );
 
-      // Update or create session entry
-      const existing = existingStore[sessionKey];
-      const entry: SessionEntry = {
-        sessionId,
-        updatedAt: state.session.lastActivity,
-        createdAt: existing?.createdAt || state.session.createdAt,
-        displayName: state.session.label,
+      // Update or create conversation entry
+      const existing = existingStore[conversationKey];
+      const entry: ConversationEntry = {
+        conversationId,
+        updatedAt: state.conversation.lastActivity,
+        createdAt: existing?.createdAt || state.conversation.createdAt,
+        displayName: state.conversation.label,
         agentId: this.agentId,
         // Token tracking will be updated by runtime
         inputTokens: existing?.inputTokens || 0,
@@ -170,17 +170,17 @@ export class SessionManager {
           lastTranscriptId: existing?.lastTranscriptId,
       };
 
-      store[sessionKey] = entry;
+      store[conversationKey] = entry;
     }
 
-    await saveSessionStore(this.storePath, store);
+    await saveConversationStore(this.storePath, store);
   }
 
   /**
-   * Update token counts for a session
+   * Update token counts for a conversation
    */
   async updateTokenCounts(
-    sessionId: SessionId,
+    conversationId: ConversationId,
     counts: {
       inputTokens?: number;
       outputTokens?: number;
@@ -188,17 +188,17 @@ export class SessionManager {
       contextTokens?: number;
     },
   ): Promise<void> {
-    const state = this.sessions.get(sessionId);
+    const state = this.conversations.get(conversationId);
     if (!state) return;
 
-    const store = loadSessionStore(this.storePath);
-    const sessionKey = deriveSessionKey(
+    const store = loadConversationStore(this.storePath);
+    const conversationKey = deriveConversationKey(
       this.agentId,
-      state.session.type,
-      state.session.label,
+      state.conversation.type,
+      state.conversation.label,
     );
 
-    const entry = store[sessionKey];
+    const entry = store[conversationKey];
     if (entry) {
       if (counts.inputTokens !== undefined) {
         entry.inputTokens = (entry.inputTokens || 0) + counts.inputTokens;
@@ -214,33 +214,33 @@ export class SessionManager {
       }
       entry.updatedAt = Date.now();
 
-      await saveSessionStore(this.storePath, store);
+      await saveConversationStore(this.storePath, store);
     }
   }
 
   /**
-   * Update session entry with custom update function
+   * Update conversation entry with custom update function
    */
-  async updateSessionEntry(
-    sessionId: SessionId,
-    updateFn: (entry: SessionEntry) => Partial<SessionEntry>,
-  ): Promise<SessionEntry | undefined> {
-    const state = this.sessions.get(sessionId);
+  async updateConversationEntry(
+    conversationId: ConversationId,
+    updateFn: (entry: ConversationEntry) => Partial<ConversationEntry>,
+  ): Promise<ConversationEntry | undefined> {
+    const state = this.conversations.get(conversationId);
     if (!state) return undefined;
 
-    const store = loadSessionStore(this.storePath);
-    const sessionKey = deriveSessionKey(
+    const store = loadConversationStore(this.storePath);
+    const conversationKey = deriveConversationKey(
       this.agentId,
-      state.session.type,
-      state.session.label,
+      state.conversation.type,
+      state.conversation.label,
     );
 
-    const entry = store[sessionKey];
+    const entry = store[conversationKey];
     if (entry) {
       const updates = updateFn(entry);
       Object.assign(entry, updates);
       entry.updatedAt = Date.now();
-      await saveSessionStore(this.storePath, store);
+      await saveConversationStore(this.storePath, store);
       return entry;
     }
 
@@ -254,15 +254,15 @@ export class SessionManager {
     return this.storePath;
   }
 
-  createSession(
-    label: SessionLabel,
-    type: SessionType = "main",
+  createConversation(
+    label: ConversationLabel,
+    type: ConversationType = "main",
     agentId?: string,
-  ): Session {
+  ): Conversation {
     const id = randomUUID();
     const now = Date.now();
 
-    const session: Session = {
+    const conversation: Conversation = {
       id,
       label,
       type,
@@ -271,53 +271,53 @@ export class SessionManager {
       agentId: agentId || this.agentId,
     };
 
-    const state: SessionState = {
-      session,
+    const state: ConversationState = {
+      conversation,
       messages: [],
     };
 
-    this.sessions.set(id, state);
-    this.persistSessions().catch((err) => {
-      console.error("Failed to persist session:", err);
+    this.conversations.set(id, state);
+    this.persistConversations().catch((err) => {
+      console.error("Failed to persist conversation:", err);
     });
 
-    // Record session creation
-    activityRecorder.recordSessionCreate(
+    // Record conversation creation
+    activityRecorder.recordConversationCreate(
       agentId || this.agentId,
       id,
       type,
       label,
     ).catch((err) => {
-      console.warn("Failed to record session creation activity:", err);
+      console.warn("Failed to record conversation creation activity:", err);
     });
 
-    return session;
+    return conversation;
   }
 
-  getSession(id: SessionId): SessionState | undefined {
-    return this.sessions.get(id);
+  getConversation(id: ConversationId): ConversationState | undefined {
+    return this.conversations.get(id);
   }
 
-  updateActivity(id: SessionId): void {
-    const state = this.sessions.get(id);
+  updateActivity(id: ConversationId): void {
+    const state = this.conversations.get(id);
     if (state) {
-      state.session.lastActivity = Date.now();
-      this.persistSessions().catch((err) => {
-        console.error("Failed to persist session update:", err);
+      state.conversation.lastActivity = Date.now();
+      this.persistConversations().catch((err) => {
+        console.error("Failed to persist conversation update:", err);
       });
       
-      // Record session update
-      activityRecorder.recordSessionUpdate(
+      // Record conversation update
+      activityRecorder.recordConversationUpdate(
         this.agentId,
         id,
       ).catch((err) => {
-        console.warn("Failed to record session update activity:", err);
+        console.warn("Failed to record conversation update activity:", err);
       });
     }
   }
 
   async addMessage(
-    id: SessionId,
+    id: ConversationId,
     role: "user" | "assistant" | "system" | "tool",
     content: string,
     options?: {
@@ -330,7 +330,7 @@ export class SessionManager {
       runId?: string;
     },
   ): Promise<void> {
-    const state = this.sessions.get(id);
+    const state = this.conversations.get(id);
     if (!state) return;
 
     const releaseLock = await this.acquireWriteLock(id);
@@ -343,16 +343,16 @@ export class SessionManager {
         toolCalls: options?.toolCalls,
       };
       state.messages.push(message);
-      state.session.lastActivity = Date.now();
+      state.conversation.lastActivity = Date.now();
 
-      // Get existing session entry to check lastTranscriptId
-      const sessionKey = deriveSessionKey(
+      // Get existing conversation entry to check lastTranscriptId
+      const conversationKey = deriveConversationKey(
         this.agentId,
-        state.session.type,
-        state.session.label,
+        state.conversation.type,
+        state.conversation.label,
       );
-      const store = loadSessionStore(this.storePath);
-      const entry = store[sessionKey];
+      const store = loadConversationStore(this.storePath);
+      const entry = store[conversationKey];
 
       // Only write to transcript if this is a new message (not already written)
       const transcriptPath = resolveTranscriptPath(
@@ -369,23 +369,23 @@ export class SessionManager {
         const transcriptEntry = transcriptEntries[0];
         appendTranscriptEntry(transcriptPath, transcriptEntry);
 
-        // Update lastTranscriptId in session entry
+        // Update lastTranscriptId in conversation entry
         if (entry) {
           entry.lastTranscriptId = transcriptEntry.id;
           entry.updatedAt = Date.now();
-          await saveSessionStore(this.storePath, store);
+          await saveConversationStore(this.storePath, store);
         } else {
           // Create new entry if it doesn't exist
-          const newSessionEntry: SessionEntry = {
-            sessionId: id,
+          const newConversationEntry: ConversationEntry = {
+            conversationId: id,
             updatedAt: Date.now(),
-            createdAt: state.session.createdAt,
-            displayName: state.session.label,
+            createdAt: state.conversation.createdAt,
+            displayName: state.conversation.label,
             agentId: this.agentId,
             lastTranscriptId: transcriptEntry.id,
           };
-          store[sessionKey] = newSessionEntry;
-          await saveSessionStore(this.storePath, store);
+          store[conversationKey] = newConversationEntry;
+          await saveConversationStore(this.storePath, store);
         }
       }
     } finally {
@@ -393,68 +393,68 @@ export class SessionManager {
     }
   }
 
-  listSessions(): Session[] {
-    return Array.from(this.sessions.values()).map((state) => state.session);
+  listConversations(): Conversation[] {
+    return Array.from(this.conversations.values()).map((state) => state.conversation);
   }
 
-  deleteSession(id: SessionId): boolean {
-    const deleted = this.sessions.delete(id);
+  deleteConversation(id: ConversationId): boolean {
+    const deleted = this.conversations.delete(id);
     if (deleted) {
-      this.persistSessions().catch((err) => {
-        console.error("Failed to persist session deletion:", err);
+      this.persistConversations().catch((err) => {
+        console.error("Failed to persist conversation deletion:", err);
       });
     }
     return deleted;
   }
 
-  getOrCreateMainSession(agentId?: string): Session {
-    // Find existing main session
-    for (const state of this.sessions.values()) {
-      if (state.session.type === "main") {
-        return state.session;
+  getOrCreateMainConversation(agentId?: string): Conversation {
+    // Find existing main conversation
+    for (const state of this.conversations.values()) {
+      if (state.conversation.type === "main") {
+        return state.conversation;
       }
     }
 
-    // Create new main session
-    return this.createSession("main", "main", agentId);
+    // Create new main conversation
+    return this.createConversation("main", "main", agentId);
   }
 
   /**
-   * Get session entry from store by session key
+   * Get conversation entry from store by conversation key
    */
-  getSessionEntryByKey(sessionKey: SessionKey): SessionEntry | undefined {
-    const store = loadSessionStore(this.storePath);
-    return store[sessionKey];
+  getConversationEntryByKey(conversationKey: ConversationKey): ConversationEntry | undefined {
+    const store = loadConversationStore(this.storePath);
+    return store[conversationKey];
   }
 
   /**
-   * Get all session entries
+   * Get all conversation entries
    */
-  getAllSessionEntries(): Record<SessionKey, SessionEntry> {
-    return loadSessionStore(this.storePath);
+  getAllConversationEntries(): Record<ConversationKey, ConversationEntry> {
+    return loadConversationStore(this.storePath);
   }
 
   /**
-   * Update session channel metadata (for channel tools to access)
+   * Update conversation channel metadata (for channel tools to access)
    */
   async updateChannelMetadata(
-    sessionId: SessionId,
+    conversationId: ConversationId,
     metadata: {
       channel?: string;
       to?: string;
       accountId?: string;
     },
   ): Promise<void> {
-    const state = this.sessions.get(sessionId);
+    const state = this.conversations.get(conversationId);
     if (!state) return;
 
-    const sessionKey = deriveSessionKey(
+    const conversationKey = deriveConversationKey(
       this.agentId,
-      state.session.type,
-      state.session.label,
+      state.conversation.type,
+      state.conversation.label,
     );
-    const store = loadSessionStore(this.storePath);
-    const entry = store[sessionKey];
+    const store = loadConversationStore(this.storePath);
+    const entry = store[conversationKey];
 
     if (entry) {
       entry.lastChannel = metadata.channel || entry.lastChannel;
@@ -469,7 +469,7 @@ export class SessionManager {
         accountId: metadata.accountId || entry.origin?.accountId,
       };
       entry.updatedAt = Date.now();
-      await saveSessionStore(this.storePath, store);
+      await saveConversationStore(this.storePath, store);
     }
   }
 
@@ -478,7 +478,7 @@ export class SessionManager {
    * Loads from transcript if needed, prioritizing recent messages
    */
   getMessagesForContext(
-    sessionId: SessionId,
+    conversationId: ConversationId,
     maxTokens?: number,
     maxMessages: number = 50,
   ): Array<{
@@ -492,7 +492,7 @@ export class SessionManager {
       arguments: string;
     }>;
   }> {
-    const state = this.sessions.get(sessionId);
+    const state = this.conversations.get(conversationId);
     if (!state) return [];
 
     // If we have messages in memory and no token limit, return recent ones
@@ -506,10 +506,10 @@ export class SessionManager {
   }
 
   /**
-   * Set session overrides (model, provider, thinking level, etc.)
+   * Set conversation overrides (model, provider, thinking level, etc.)
    */
-  async setSessionOverrides(
-    sessionId: SessionId,
+  async setConversationOverrides(
+    conversationId: ConversationId,
     overrides: {
       modelOverride?: string;
       providerOverride?: string;
@@ -520,22 +520,22 @@ export class SessionManager {
       timeoutSecondsOverride?: number;
     },
   ): Promise<void> {
-    const state = this.sessions.get(sessionId);
+    const state = this.conversations.get(conversationId);
     if (!state) return;
 
-    const releaseLock = await this.acquireWriteLock(sessionId);
+    const releaseLock = await this.acquireWriteLock(conversationId);
     try {
-      const sessionKey = deriveSessionKey(
+      const conversationKey = deriveConversationKey(
         this.agentId,
-        state.session.type,
-        state.session.label,
+        state.conversation.type,
+        state.conversation.label,
       );
-      const store = loadSessionStore(this.storePath);
-      const entry = store[sessionKey] || {
-        sessionId,
+      const store = loadConversationStore(this.storePath);
+      const entry = store[conversationKey] || {
+        conversationId,
         updatedAt: Date.now(),
-        createdAt: state.session.createdAt,
-        displayName: state.session.label,
+        createdAt: state.conversation.createdAt,
+        displayName: state.conversation.label,
         agentId: this.agentId,
       };
 
@@ -562,26 +562,26 @@ export class SessionManager {
       }
 
       entry.updatedAt = Date.now();
-      store[sessionKey] = entry;
-      await saveSessionStore(this.storePath, store);
+      store[conversationKey] = entry;
+      await saveConversationStore(this.storePath, store);
     } finally {
       releaseLock();
     }
   }
 
   /**
-   * Get session entry with overrides
+   * Get conversation entry with overrides
    */
-  getSessionEntry(sessionId: SessionId): SessionEntry | undefined {
-    const state = this.sessions.get(sessionId);
+  getConversationEntry(conversationId: ConversationId): ConversationEntry | undefined {
+    const state = this.conversations.get(conversationId);
     if (!state) return undefined;
 
-    const sessionKey = deriveSessionKey(
+    const conversationKey = deriveConversationKey(
       this.agentId,
-      state.session.type,
-      state.session.label,
+      state.conversation.type,
+      state.conversation.label,
     );
-    const store = loadSessionStore(this.storePath);
-    return store[sessionKey];
+    const store = loadConversationStore(this.storePath);
+    return store[conversationKey];
   }
 }

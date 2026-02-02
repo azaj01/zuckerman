@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { initializeChannels } from "@server/world/communication/messengers/channels/factory.js";
 import type { ZuckermanConfig } from "@server/world/config/types.js";
 import { SimpleRouter } from "@server/world/communication/routing/index.js";
-import { SessionManager } from "@server/agents/zuckerman/sessions/index.js";
+import { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
 import { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
 
 // Mock channels to avoid actual connections
@@ -45,7 +45,7 @@ vi.mock("@server/world/communication/messengers/channels/signal.js", () => ({
 describe("initializeChannels", () => {
   let config: ZuckermanConfig;
   let router: SimpleRouter;
-  let sessionManager: SessionManager;
+  let conversationManager: ConversationManager;
   let agentFactory: AgentRuntimeFactory;
   let broadcastEvent: ReturnType<typeof vi.fn>;
 
@@ -55,7 +55,7 @@ describe("initializeChannels", () => {
       channels: {},
     };
     router = new SimpleRouter(agentFactory);
-    sessionManager = new SessionManager("test-agent", "/test/path");
+    conversationManager = new ConversationManager("test-agent", "/test/path");
     broadcastEvent = vi.fn();
   });
 
@@ -63,7 +63,7 @@ describe("initializeChannels", () => {
     const registry = await initializeChannels(
       config,
       router,
-      sessionManager,
+      conversationManager,
       agentFactory,
       broadcastEvent
     );
@@ -82,7 +82,7 @@ describe("initializeChannels", () => {
     const registry = await initializeChannels(
       config,
       router,
-      sessionManager,
+      conversationManager,
       agentFactory,
       broadcastEvent
     );
@@ -102,7 +102,7 @@ describe("initializeChannels", () => {
     const registry = await initializeChannels(
       config,
       router,
-      sessionManager,
+      conversationManager,
       agentFactory,
       broadcastEvent
     );
@@ -121,7 +121,7 @@ describe("initializeChannels", () => {
     const registry = await initializeChannels(
       config,
       router,
-      sessionManager,
+      conversationManager,
       agentFactory,
       broadcastEvent
     );
@@ -148,7 +148,7 @@ describe("initializeChannels", () => {
     const registry = await initializeChannels(
       config,
       router,
-      sessionManager,
+      conversationManager,
       agentFactory,
       broadcastEvent
     );
@@ -174,7 +174,7 @@ describe("initializeChannels", () => {
     const registry = await initializeChannels(
       config,
       router,
-      sessionManager,
+      conversationManager,
       agentFactory,
       broadcastEvent
     );
@@ -195,7 +195,7 @@ describe("initializeChannels", () => {
     const registry = await initializeChannels(
       config,
       router,
-      sessionManager,
+      conversationManager,
       agentFactory,
       broadcastEvent
     );
@@ -217,7 +217,7 @@ describe("initializeChannels", () => {
     await initializeChannels(
       config,
       router,
-      sessionManager,
+      conversationManager,
       agentFactory,
       broadcastEvent
     );

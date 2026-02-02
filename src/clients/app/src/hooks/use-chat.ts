@@ -1,24 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { Session, SessionType } from "../types/session";
+import type { Conversation, ConversationType } from "../types/conversation";
 import type { Message } from "../types/message";
-import { useSessionService, useMessageService, useAgentService } from "../core/gateway/use-services";
+import { useConversationService, useMessageService, useAgentService } from "../core/gateway/use-services";
 import { useGatewayContext } from "../core/gateway/use-gateway-context";
 import { getStorageItem, setStorageItem } from "../core/storage/local-storage";
 
-const ACTIVE_SESSIONS_STORAGE_KEY = "zuckerman:active-sessions";
+const ACTIVE_CONVERSATIONS_STORAGE_KEY = "zuckerman:active-conversations";
 
 export interface UseChatReturn {
-  // Sessions
-  sessions: Session[];
-  currentSessionId: string | null;
-  setCurrentSessionId: (sessionId: string | null) => void;
-  createSession: (type: SessionType, agentId: string, label?: string) => Promise<Session>;
-  loadSessions: () => Promise<void>;
+  // Conversations
+  conversations: Conversation[];
+  currentConversationId: string | null;
+  setCurrentConversationId: (conversationId: string | null) => void;
+  createConversation: (type: ConversationType, agentId: string, label?: string) => Promise<Conversation>;
+  loadConversations: () => Promise<void>;
 
-  // Active sessions (UI state)
-  activeSessionIds: Set<string>;
-  addToActiveSessions: (sessionId: string) => void;
-  removeFromActiveSessions: (sessionId: string) => void;
+  // Active conversations (UI state)
+  activeConversationIds: Set<string>;
+  addToActiveConversations: (conversationId: string) => void;
+  removeFromActiveConversations: (conversationId: string) => void;
 
   // Messages
   messages: Message[];
@@ -29,8 +29,8 @@ export interface UseChatReturn {
 
 /**
  * Consolidated hook for chat feature:
- * - Session management
- * - Active sessions UI state
+ * - Conversation management
+ * - Active conversations UI state
  * - Message loading and sending
  * Uses gateway client from context (no props needed)
  */
@@ -39,21 +39,21 @@ export function useChat(
   agentId: string | null
 ): UseChatReturn {
   const { gatewayClient, connectionStatus } = useGatewayContext();
-  const sessionService = useSessionService();
+  const conversationService = useConversationService();
   const messageService = useMessageService();
   const agentService = useAgentService();
 
-  // Sessions state
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  // Conversations state
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
 
-  // Active sessions state (UI)
-  const [activeSessionIds, setActiveSessionIds] = useState<Set<string>>(() => {
-    const stored = getStorageItem<string[]>(ACTIVE_SESSIONS_STORAGE_KEY, []);
+  // Active conversations state (UI)
+  const [activeConversationIds, setActiveConversationIds] = useState<Set<string>>(() => {
+    const stored = getStorageItem<string[]>(ACTIVE_CONVERSATIONS_STORAGE_KEY, []);
     if (stored.length > 0) {
       return new Set(stored);
     }
-    return currentSessionId ? new Set([currentSessionId]) : new Set<string>();
+    return currentConversationId ? new Set([currentConversationId]) : new Set<string>();
   });
 
   // Messages state
@@ -63,105 +63,105 @@ export function useChat(
   // Refs for messages
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const lastMessageCountRef = useRef<number>(0);
-  const currentSessionIdRef = useRef<string | null>(currentSessionId);
+  const currentConversationIdRef = useRef<string | null>(currentConversationId);
   const streamingMessageRef = useRef<{ runId: string; content: string } | null>(null);
 
-  // Update refs when sessionId changes
+  // Update refs when conversationId changes
   useEffect(() => {
-    currentSessionIdRef.current = currentSessionId;
-  }, [currentSessionId]);
+    currentConversationIdRef.current = currentConversationId;
+  }, [currentConversationId]);
 
-  // Sync currentSessionId with active sessions
+  // Sync currentConversationId with active conversations
   useEffect(() => {
-    if (currentSessionId) {
-      setActiveSessionIds((prev) => {
-        if (prev.has(currentSessionId)) return prev;
+    if (currentConversationId) {
+      setActiveConversationIds((prev) => {
+        if (prev.has(currentConversationId)) return prev;
         const updated = new Set(prev);
-        updated.add(currentSessionId);
+        updated.add(currentConversationId);
         return updated;
       });
     }
-  }, [currentSessionId]);
+  }, [currentConversationId]);
 
-  // Persist active sessions to localStorage
+  // Persist active conversations to localStorage
   useEffect(() => {
-    setStorageItem(ACTIVE_SESSIONS_STORAGE_KEY, Array.from(activeSessionIds));
-  }, [activeSessionIds]);
+    setStorageItem(ACTIVE_CONVERSATIONS_STORAGE_KEY, Array.from(activeConversationIds));
+  }, [activeConversationIds]);
 
-  // Session management
-  const createSession = useCallback(
-    async (type: SessionType, agentId: string, label?: string): Promise<Session> => {
-      if (connectionStatus !== "connected" || !sessionService) {
+  // Conversation management
+  const createConversation = useCallback(
+    async (type: ConversationType, agentId: string, label?: string): Promise<Conversation> => {
+      if (connectionStatus !== "connected" || !conversationService) {
         throw new Error("Gateway not connected");
       }
 
-      const newSession = await sessionService.createSession(type, agentId, label);
-      setSessions((prev) => [...prev, newSession]);
-      setCurrentSessionId(newSession.id);
-      return newSession;
+      const newConversation = await conversationService.createConversation(type, agentId, label);
+      setConversations((prev) => [...prev, newConversation]);
+      setCurrentConversationId(newConversation.id);
+      return newConversation;
     },
-    [connectionStatus, sessionService]
+    [connectionStatus, conversationService]
   );
 
-  const loadSessions = useCallback(async () => {
-    if (connectionStatus !== "connected" || !sessionService) {
+  const loadConversations = useCallback(async () => {
+    if (connectionStatus !== "connected" || !conversationService) {
       return;
     }
 
     try {
-      const loadedSessions = await sessionService.listSessions();
-      setSessions(loadedSessions);
+      const loadedConversations = await conversationService.listConversations();
+      setConversations(loadedConversations);
 
-      if (loadedSessions.length > 0 && !currentSessionId) {
-        setCurrentSessionId(loadedSessions[0].id);
+      if (loadedConversations.length > 0 && !currentConversationId) {
+        setCurrentConversationId(loadedConversations[0].id);
       }
     } catch (error) {
-      console.error("Failed to load sessions:", error);
+      console.error("Failed to load conversations:", error);
     }
-  }, [connectionStatus, sessionService, currentSessionId]);
+  }, [connectionStatus, conversationService, currentConversationId]);
 
   // React to connection status changes
   useEffect(() => {
     if (connectionStatus === "connected" && currentAgentId) {
-      loadSessions();
-    } else if (connectionStatus === "connected" && !currentAgentId && sessions.length === 0) {
-      loadSessions();
+      loadConversations();
+    } else if (connectionStatus === "connected" && !currentAgentId && conversations.length === 0) {
+      loadConversations();
     } else if (connectionStatus === "disconnected") {
-      // Clear sessions when disconnected
-      setSessions([]);
-      setCurrentSessionId(null);
+      // Clear conversations when disconnected
+      setConversations([]);
+      setCurrentConversationId(null);
     }
-  }, [connectionStatus, currentAgentId, loadSessions, sessions.length]);
+  }, [connectionStatus, currentAgentId, loadConversations, conversations.length]);
 
-  // Active sessions management
-  const addToActiveSessions = useCallback((sessionId: string) => {
-    setActiveSessionIds((prev) => {
-      if (prev.has(sessionId)) return prev;
+  // Active conversations management
+  const addToActiveConversations = useCallback((conversationId: string) => {
+    setActiveConversationIds((prev) => {
+      if (prev.has(conversationId)) return prev;
       const updated = new Set(prev);
-      updated.add(sessionId);
+      updated.add(conversationId);
       return updated;
     });
   }, []);
 
-  const removeFromActiveSessions = useCallback((sessionId: string) => {
-    setActiveSessionIds((prev) => {
-      if (!prev.has(sessionId)) return prev;
+  const removeFromActiveConversations = useCallback((conversationId: string) => {
+    setActiveConversationIds((prev) => {
+      if (!prev.has(conversationId)) return prev;
       const updated = new Set(prev);
-      updated.delete(sessionId);
+      updated.delete(conversationId);
       return updated;
     });
   }, []);
 
   // Message management
   const loadMessages = useCallback(async () => {
-    const currentSession = currentSessionId || currentSessionIdRef.current;
-    if (!currentSession || connectionStatus !== "connected" || !messageService) {
+    const currentConversation = currentConversationId || currentConversationIdRef.current;
+    if (!currentConversation || connectionStatus !== "connected" || !messageService) {
       setMessages([]);
       return;
     }
 
     try {
-      const loadedMessages = await messageService.loadMessages(currentSession);
+      const loadedMessages = await messageService.loadMessages(currentConversation);
       const deduplicated = messageService.deduplicateMessages(loadedMessages);
 
       setMessages((prev) => {
@@ -192,15 +192,15 @@ export function useChat(
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      const isSessionNotFound =
-        errorMessage.includes("not found") || errorMessage.includes("Session");
+      const isConversationNotFound =
+        errorMessage.includes("not found") || errorMessage.includes("Conversation");
 
-      if (isSessionNotFound) {
+      if (isConversationNotFound) {
         setMessages([]);
         lastMessageCountRef.current = 0;
       }
     }
-  }, [connectionStatus, messageService, currentSessionId]);
+  }, [connectionStatus, messageService, currentConversationId]);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -213,8 +213,8 @@ export function useChat(
     if (pollingRef.current) return;
 
     pollingRef.current = setInterval(async () => {
-      const currentSession = currentSessionIdRef.current;
-      if (!currentSession || connectionStatus !== "connected" || !sessionService) {
+      const currentConversation = currentConversationIdRef.current;
+      if (!currentConversation || connectionStatus !== "connected" || !conversationService) {
         return;
       }
 
@@ -223,34 +223,34 @@ export function useChat(
       }
 
       try {
-        const sessionState = await sessionService.getSession(currentSession);
-        const currentCount = sessionState.messages?.length || 0;
+        const conversationState = await conversationService.getConversation(currentConversation);
+        const currentCount = conversationState.messages?.length || 0;
 
         if (currentCount !== lastMessageCountRef.current) {
           await loadMessages();
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        const isSessionNotFound =
-          errorMessage.includes("not found") || errorMessage.includes("Session");
+        const isConversationNotFound =
+          errorMessage.includes("not found") || errorMessage.includes("Conversation");
 
-        if (isSessionNotFound) {
+        if (isConversationNotFound) {
           stopPolling();
           setMessages([]);
           lastMessageCountRef.current = 0;
         }
       }
     }, 5000);
-  }, [connectionStatus, sessionService, loadMessages, isSending, stopPolling]);
+  }, [connectionStatus, conversationService, loadMessages, isSending, stopPolling]);
 
   useEffect(() => {
-    if (!isSending && currentSessionId) {
+    if (!isSending && currentConversationId) {
       setMessages([]);
       loadMessages();
-    } else if (!currentSessionId) {
+    } else if (!currentConversationId) {
       setMessages([]);
     }
-  }, [currentSessionId, loadMessages, isSending]);
+  }, [currentConversationId, loadMessages, isSending]);
 
   // Streaming event listener
   useEffect(() => {
@@ -261,7 +261,7 @@ export function useChat(
 
       const eventType = event.event.replace("agent.stream.", "");
       const payload = event.payload as {
-        sessionId?: string;
+        conversationId?: string;
         runId?: string;
         token?: string;
         tool?: string;
@@ -271,7 +271,7 @@ export function useChat(
         error?: string;
       };
 
-      if (payload.sessionId !== currentSessionIdRef.current) return;
+      if (payload.conversationId !== currentConversationIdRef.current) return;
 
       if (eventType === "lifecycle") {
         if (payload.phase === "start") {
@@ -404,7 +404,7 @@ export function useChat(
   }, [gatewayClient, loadMessages]);
 
   useEffect(() => {
-    if (connectionStatus === "connected" && currentSessionId) {
+    if (connectionStatus === "connected" && currentConversationId) {
       startPolling();
     } else {
       stopPolling();
@@ -413,11 +413,11 @@ export function useChat(
     return () => {
       stopPolling();
     };
-  }, [connectionStatus, currentSessionId, startPolling, stopPolling]);
+  }, [connectionStatus, currentConversationId, startPolling, stopPolling]);
 
   const sendMessage = useCallback(
     async (messageText: string) => {
-      if (!gatewayClient || !messageService || !agentService || !sessionService) {
+      if (!gatewayClient || !messageService || !agentService || !conversationService) {
         throw new Error("Services not initialized");
       }
 
@@ -434,12 +434,12 @@ export function useChat(
         currentAgentId = agents[0];
       }
 
-      let currentSessionId = currentSessionIdRef.current;
-      if (!currentSessionId) {
-        const newSession = await sessionService.createSession("main", currentAgentId);
-        currentSessionId = newSession.id;
-        currentSessionIdRef.current = currentSessionId;
-        setCurrentSessionId(currentSessionId);
+      let currentConversationId = currentConversationIdRef.current;
+      if (!currentConversationId) {
+        const newConversation = await conversationService.createConversation("main", currentAgentId);
+        currentConversationId = newConversation.id;
+        currentConversationIdRef.current = currentConversationId;
+        setCurrentConversationId(currentConversationId);
       }
 
       setIsSending(true);
@@ -461,16 +461,16 @@ export function useChat(
 
       try {
         // Ensure we have valid IDs (they should be set above, but TypeScript needs this)
-        if (!currentSessionId || !currentAgentId) {
-          throw new Error("Session or agent ID is missing");
+        if (!currentConversationId || !currentAgentId) {
+          throw new Error("Conversation or agent ID is missing");
         }
 
         // TypeScript narrowing - assign to const to ensure types
-        const sessionId: string = currentSessionId;
+        const conversationId: string = currentConversationId;
         const agentId: string = currentAgentId;
 
-        console.log(`[useChat] Sending message with agentId: "${agentId}", sessionId: "${sessionId}"`);
-        await messageService.sendMessage(sessionId, agentId, messageText);
+        console.log(`[useChat] Sending message with agentId: "${agentId}", conversationId: "${conversationId}"`);
+        await messageService.sendMessage(conversationId, agentId, messageText);
 
         let attempts = 0;
         const pollInterval = 300;
@@ -485,7 +485,7 @@ export function useChat(
                   return;
                 }
 
-                const loadedMessages = await messageService.loadMessages(sessionId);
+                const loadedMessages = await messageService.loadMessages(conversationId);
                 const deduplicated = messageService.deduplicateMessages(loadedMessages);
 
                 const hasResponse = deduplicated.some((msg) => {
@@ -505,10 +505,10 @@ export function useChat(
                 }
               } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : String(error);
-                const isSessionNotFound =
-                  errorMessage.includes("not found") || errorMessage.includes("Session");
+                const isConversationNotFound =
+                  errorMessage.includes("not found") || errorMessage.includes("Conversation");
 
-                if (isSessionNotFound) {
+                if (isConversationNotFound) {
                   clearInterval(interval);
                   setIsSending(false);
                   setMessages((prev) => prev.filter((msg) => msg.role !== "thinking"));
@@ -542,7 +542,7 @@ export function useChat(
         throw new Error(`Failed to send message: ${errorMessage}`);
       }
     },
-    [gatewayClient, connectionStatus, messageService, agentService, sessionService, agentId, loadMessages]
+    [gatewayClient, connectionStatus, messageService, agentService, conversationService, agentId, loadMessages]
   );
 
   useEffect(() => {
@@ -553,14 +553,14 @@ export function useChat(
   }, [stopPolling]);
 
   return {
-    sessions,
-    currentSessionId,
-    setCurrentSessionId,
-    createSession,
-    loadSessions,
-    activeSessionIds,
-    addToActiveSessions,
-    removeFromActiveSessions,
+    conversations,
+    currentConversationId,
+    setCurrentConversationId,
+    createConversation,
+    loadConversations,
+    activeConversationIds,
+    addToActiveConversations,
+    removeFromActiveConversations,
     messages,
     isSending,
     sendMessage,

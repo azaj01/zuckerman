@@ -7,12 +7,17 @@ import type { ServiceContainer } from "./service-registry";
  * These hooks abstract away the registry access pattern
  */
 
-export function useSessionService() {
+export function useConversationService() {
   const { gatewayClient, serviceRegistry } = useGatewayContext();
   return useMemo(
-    () => serviceRegistry.getService(gatewayClient, "sessionService"),
+    () => serviceRegistry.getService(gatewayClient, "conversationService"),
     [gatewayClient, serviceRegistry]
   );
+}
+
+// Backward compatibility alias
+export function useSessionService() {
+  return useConversationService();
 }
 
 export function useMessageService() {

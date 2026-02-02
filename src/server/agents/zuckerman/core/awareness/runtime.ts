@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRuntime, AgentRunParams, AgentRunResult, StreamCallback } from "@server/world/runtime/agents/types.js";
 import type { LLMMessage, LLMTool, LLMModel } from "@server/agents/zuckerman/core/awareness/providers/types.js";
-import type { SessionId } from "@server/agents/zuckerman/sessions/types.js";
+import type { ConversationId } from "@server/agents/zuckerman/conversations/types.js";
 import { loadConfig } from "@server/world/config/index.js";
-import { SessionManager } from "@server/agents/zuckerman/sessions/index.js";
+import { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
 import { ZuckermanToolRegistry } from "@server/agents/zuckerman/tools/registry.js";
 import type { ToolExecutionContext } from "@server/agents/zuckerman/tools/terminal/index.js";
 import { truncateOutput } from "@server/agents/zuckerman/tools/truncation.js";
@@ -15,7 +15,7 @@ import {
   resolveAgentLandDir,
 } from "@server/world/land/resolver.js";
 import {
-  loadMemoryForSession,
+  loadMemoryForConversation,
   formatMemoryForPrompt,
 } from "@server/agents/zuckerman/core/memory/storage/persistence.js";
 import { runMemoryFlushIfNeeded } from "@server/agents/zuckerman/core/memory/flush-runner.js";
@@ -26,15 +26,15 @@ export class ZuckermanAwareness implements AgentRuntime {
   
   private promptLoader: PromptLoader;
   private providerService: LLMProviderService;
-  private sessionManager: SessionManager;
+  private conversationManager: ConversationManager;
   private toolRegistry: ZuckermanToolRegistry;
   
   // Load prompts from agent's core directory (where markdown files are)
   private readonly agentDir: string;
 
-  constructor(sessionManager?: SessionManager, providerService?: LLMProviderService, promptLoader?: PromptLoader) {
-    this.sessionManager = sessionManager || new SessionManager(this.agentId);
-    // Initialize tool registry without sessionId - will be set per-run
+  constructor(conversationManager?: ConversationManager, providerService?: LLMProviderService, promptLoader?: PromptLoader) {
+    this.conversationManager = conversationManager || new ConversationManager(this.agentId);
+    // Initialize tool registry without conversationId - will be set per-run
     this.toolRegistry = new ZuckermanToolRegistry();
     this.providerService = providerService || new LLMProviderService();
     this.promptLoader = promptLoader || new PromptLoader();
@@ -58,9 +58,9 @@ export class ZuckermanAwareness implements AgentRuntime {
     const basePrompt = this.promptLoader.buildSystemPrompt(prompts);
     const parts: string[] = [basePrompt];
     
-    // Add memory (only for main sessions - will be filtered in run method)
+    // Add memory (only for main conversations - will be filtered in run method)
     if (landDir) {
-      const { dailyLogs, longTermMemory } = loadMemoryForSession(landDir);
+      const { dailyLogs, longTermMemory } = loadMemoryForConversation(landDir);
       if (dailyLogs.size > 0 || longTermMemory) {
         const memorySection = formatMemoryForPrompt(dailyLogs, longTermMemory);
         parts.push(memorySection);
@@ -83,13 +83,13 @@ export class ZuckermanAwareness implements AgentRuntime {
   }
 
   async run(params: AgentRunParams): Promise<AgentRunResult> {
-    const { sessionId, message, thinkingLevel = "off", temperature, model, securityContext, stream } = params;
+    const { conversationId, message, thinkingLevel = "off", temperature, model, securityContext, stream } = params;
     const runId = randomUUID();
 
     // Record agent run start
     await activityRecorder.recordAgentRunStart(
       this.agentId,
-      sessionId,
+      conversationId,
       runId,
       message,
     );
@@ -106,8 +106,8 @@ export class ZuckermanAwareness implements AgentRuntime {
     }
 
     try {
-      // Update tool registry session ID for batch tool context
-      this.toolRegistry.setSessionId(sessionId);
+      // Update tool registry conversation ID for batch tool context
+      this.toolRegistry.setConversationId(conversationId);
 
       // Get LLM provider and config
       const config = await loadConfig();
@@ -122,8 +122,8 @@ export class ZuckermanAwareness implements AgentRuntime {
       await runMemoryFlushIfNeeded({
         config,
         runtime: this,
-        sessionManager: this.sessionManager,
-        sessionId,
+        conversationManager: this.conversationManager,
+        conversationId,
         modelId: modelForFlush?.id,
         agentId: this.agentId,
         landDir,
@@ -140,11 +140,11 @@ export class ZuckermanAwareness implements AgentRuntime {
         { role: "system", content: systemPrompt },
       ];
 
-      // Load session history
-      const session = this.sessionManager.getSession(sessionId);
-      if (session) {
+      // Load conversation history
+      const conversation = this.conversationManager.getConversation(conversationId);
+      if (conversation) {
         // Add all previous messages (no limit - uses full model context window)
-        for (const msg of session.messages) {
+        for (const msg of conversation.messages) {
           messages.push({
             role: msg.role === "user" ? "user" : "assistant",
             content: msg.content,
@@ -178,7 +178,7 @@ export class ZuckermanAwareness implements AgentRuntime {
       // Handle tool calls if any
       if (result.toolCalls && result.toolCalls.length > 0) {
         return await this.handleToolCalls({
-          sessionId,
+          conversationId,
           runId,
           messages,
           toolCalls: result.toolCalls,
@@ -206,7 +206,7 @@ export class ZuckermanAwareness implements AgentRuntime {
       // Record agent run completion
       await activityRecorder.recordAgentRunComplete(
         this.agentId,
-        sessionId,
+        conversationId,
         runId,
         result.content,
         result.tokensUsed?.total,
@@ -234,7 +234,7 @@ export class ZuckermanAwareness implements AgentRuntime {
       // Record agent run error
       await activityRecorder.recordAgentRunError(
         this.agentId,
-        sessionId,
+        conversationId,
         runId,
         err instanceof Error ? err.message : String(err),
       );
@@ -355,7 +355,7 @@ export class ZuckermanAwareness implements AgentRuntime {
    * Handle tool calls and iteration
    */
   private async handleToolCalls(params: {
-    sessionId: string;
+    conversationId: string;
     runId: string;
     messages: LLMMessage[];
     toolCalls: any[];
@@ -366,10 +366,7 @@ export class ZuckermanAwareness implements AgentRuntime {
     llmTools: LLMTool[];
     landDir?: string;
   }): Promise<AgentRunResult> {
-    const { sessionId, runId, messages, toolCalls, securityContext, stream, model, temperature, llmTools, landDir } = params;
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runtime.ts:327',message:'handleToolCalls entry',data:{messagesLength:messages.length,toolCallsCount:toolCalls.length,toolCallIds:toolCalls.map(tc=>tc.id),messageRoles:messages.map(m=>m.role)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,D'})}).catch(()=>{});
-    // #endregion
+    const { conversationId, runId, messages, toolCalls, securityContext, stream, model, temperature, llmTools, landDir } = params;
     
     // Add assistant message with tool calls to history
     messages.push({
@@ -377,9 +374,6 @@ export class ZuckermanAwareness implements AgentRuntime {
       content: "",
       toolCalls,
     });
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runtime.ts:334',message:'Added assistant msg with toolCalls',data:{messagesLength:messages.length,lastMessageRole:messages[messages.length-1].role,lastMessageHasToolCalls:!!messages[messages.length-1].toolCalls},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
 
     // Execute tools
     const toolCallResults = [];
@@ -429,7 +423,7 @@ export class ZuckermanAwareness implements AgentRuntime {
         // Record tool call
         await activityRecorder.recordToolCall(
           this.agentId,
-          sessionId,
+          conversationId,
           runId,
           tool.definition.name,
           args,
@@ -437,7 +431,7 @@ export class ZuckermanAwareness implements AgentRuntime {
 
         // Create execution context for tool
         const executionContext: ToolExecutionContext = {
-          sessionId,
+          conversationId,
           landDir,
           stream: stream
             ? (event) => {
@@ -498,7 +492,7 @@ export class ZuckermanAwareness implements AgentRuntime {
         // Record tool result
         await activityRecorder.recordToolResult(
           this.agentId,
-          sessionId,
+          conversationId,
           runId,
           tool.definition.name,
           result,
@@ -528,16 +522,13 @@ export class ZuckermanAwareness implements AgentRuntime {
           role: "tool" as const,
           content: resultContent,
         });
-        // #region agent log
-        fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runtime.ts:461',message:'Created tool result',data:{toolCallId:toolCall.id,toolName:toolCall.name,resultLength:resultContent.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         
         // Record tool error
         await activityRecorder.recordToolError(
           this.agentId,
-          sessionId,
+          conversationId,
           runId,
           toolCall.name,
           errorMsg,
@@ -550,23 +541,14 @@ export class ZuckermanAwareness implements AgentRuntime {
         });
       }
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runtime.ts:476',message:'Before adding tool results to messages',data:{toolCallResultsCount:toolCallResults.length,toolCallResultIds:toolCallResults.map(r=>r.toolCallId),messagesLength:messages.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     // Add tool results to messages
     for (const result of toolCallResults) {
       messages.push(result);
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runtime.ts:479',message:'After adding tool results',data:{messagesLength:messages.length,lastFewRoles:messages.slice(-5).map(m=>m.role)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,E'})}).catch(()=>{});
-    // #endregion
 
     // Run LLM again with tool results
     const config = await loadConfig();
     const provider = await this.providerService.selectProvider(config);
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runtime.ts:485',message:'Calling LLM with tool results',data:{providerName:provider.name,messagesLength:messages.length,messageRoles:messages.map(m=>m.role)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B'})}).catch(()=>{});
-    // #endregion
     const result = await this.callLLMWithStreaming({
       provider,
       messages,
@@ -579,11 +561,8 @@ export class ZuckermanAwareness implements AgentRuntime {
 
     // Handle nested tool calls (recursive)
     if (result.toolCalls && result.toolCalls.length > 0) {
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/1837ab77-87c8-488b-a311-1ab411424999',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runtime.ts:496',message:'Recursive handleToolCalls',data:{messagesLength:messages.length,newToolCallsCount:result.toolCalls.length,newToolCallIds:result.toolCalls.map(tc=>tc.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
       return await this.handleToolCalls({
-        sessionId,
+        conversationId,
         runId,
         messages,
         toolCalls: result.toolCalls,
@@ -611,7 +590,7 @@ export class ZuckermanAwareness implements AgentRuntime {
     // Record agent run completion (from tool calls path)
     await activityRecorder.recordAgentRunComplete(
       this.agentId,
-      sessionId,
+      conversationId,
       runId,
       result.content,
       result.tokensUsed?.total,

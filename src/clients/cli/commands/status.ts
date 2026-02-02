@@ -44,10 +44,10 @@ export function createStatusCommand(): Command {
           typeof agent === "string" ? { id: agent } : agent
         );
 
-        // Get sessions
-        const sessionsResponse = await client.call({ method: "sessions.list" });
-        const sessions = sessionsResponse.ok && sessionsResponse.result
-          ? ((sessionsResponse.result as { sessions: Array<{ id: string }> }).sessions || [])
+        // Get conversations
+        const conversationsResponse = await client.call({ method: "conversations.list" });
+        const conversations = conversationsResponse.ok && conversationsResponse.result
+          ? ((conversationsResponse.result as { conversations: Array<{ id: string }> }).conversations || [])
           : [];
 
         const statusData = {
@@ -62,9 +62,9 @@ export function createStatusCommand(): Command {
             count: agents.length,
             list: agents.map(a => ({ id: a.id })),
           },
-          sessions: {
-            count: sessions.length,
-            list: sessions.map(s => ({ id: s.id })),
+          conversations: {
+            count: conversations.length,
+            list: conversations.map(c => ({ id: c.id })),
           },
         };
 
@@ -97,11 +97,11 @@ export function createStatusCommand(): Command {
 
           console.log();
 
-          // Sessions
-          console.log(`💬 Sessions: ${sessions.length}`);
-          if (sessions.length > 0) {
-            sessions.forEach((session) => {
-              console.log(`   • ${session.id.slice(0, 8)}...`);
+          // Conversations
+          console.log(`💬 Conversations: ${conversations.length}`);
+          if (conversations.length > 0) {
+            conversations.forEach((conversation) => {
+              console.log(`   • ${conversation.id.slice(0, 8)}...`);
             });
           }
         }

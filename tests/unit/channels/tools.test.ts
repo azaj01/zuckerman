@@ -9,11 +9,11 @@ import { DiscordChannel } from "@server/world/communication/messengers/channels/
 import { SignalChannel } from "@server/world/communication/messengers/channels/signal.js";
 import type { TelegramConfig, DiscordConfig, SignalConfig } from "@server/world/config/types.js";
 
-// Mock session store
-vi.mock("@server/agents/zuckerman/sessions/store.js", () => ({
-  loadSessionStore: vi.fn().mockReturnValue({
-    "session-key": {
-      sessionId: "test-session-id",
+// Mock conversation store
+vi.mock("@server/agents/zuckerman/conversations/store.js", () => ({
+  loadConversationStore: vi.fn().mockReturnValue({
+    "conversation-key": {
+      conversationId: "test-conversation-id",
       lastChannel: "telegram",
       lastTo: "123456789",
       deliveryContext: {
@@ -27,7 +27,7 @@ vi.mock("@server/agents/zuckerman/sessions/store.js", () => ({
       },
     },
   }),
-  resolveSessionStorePath: vi.fn().mockReturnValue("/test/path"),
+  resolveConversationStorePath: vi.fn().mockReturnValue("/test/path"),
 }));
 
 describe("Channel Tools", () => {
@@ -98,7 +98,7 @@ describe("Channel Tools", () => {
         agentId: "test-agent",
         toolPolicy: { allowed: ["telegram"] },
       };
-      const executionContext = { sessionId: "test-session-id" };
+      const executionContext = { conversationId: "test-conversation-id" };
 
       const result = await tool.handler(
         { message: "Hello", to: "987654321" },
@@ -110,13 +110,13 @@ describe("Channel Tools", () => {
       expect(telegramChannel.send).toHaveBeenCalledWith("Hello", "987654321");
     });
 
-    it("should auto-detect chat ID from session", async () => {
+    it("should auto-detect chat ID from conversation", async () => {
       const tool = createTelegramTool();
       const securityContext = {
         agentId: "test-agent",
         toolPolicy: { allowed: ["telegram"] },
       };
-      const executionContext = { sessionId: "test-session-id" };
+      const executionContext = { conversationId: "test-conversation-id" };
 
       const result = await tool.handler(
         { message: "Hello", to: "me" },
@@ -201,7 +201,7 @@ describe("Channel Tools", () => {
         agentId: "test-agent",
         toolPolicy: { allowed: ["discord"] },
       };
-      const executionContext = { sessionId: "test-session-id" };
+      const executionContext = { conversationId: "test-conversation-id" };
 
       const result = await tool.handler(
         { message: "Hello", to: "987654321" },
@@ -248,7 +248,7 @@ describe("Channel Tools", () => {
         agentId: "test-agent",
         toolPolicy: { allowed: ["signal"] },
       };
-      const executionContext = { sessionId: "test-session-id" };
+      const executionContext = { conversationId: "test-conversation-id" };
 
       const result = await tool.handler(
         { message: "Hello", to: "+1234567890" },

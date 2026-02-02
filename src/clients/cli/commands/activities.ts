@@ -14,7 +14,7 @@ export function createActivitiesCommand(): Command {
     .option("--to <timestamp>", "End timestamp (milliseconds)")
     .option("--date <date>", "Date filter (YYYY-MM-DD)")
     .option("--agent <agentId>", "Filter by agent ID")
-    .option("--session <sessionId>", "Filter by session ID")
+    .option("--conversation <conversationId>", "Filter by conversation ID")
     .option("--type <type>", "Filter by activity type (comma-separated)")
     .option("--limit <limit>", "Limit number of results", "100")
     .option("--offset <offset>", "Offset for pagination", "0")
@@ -24,7 +24,10 @@ export function createActivitiesCommand(): Command {
     .action(async (options) => {
       await ensureGatewayRunning(options.host, options.port);
 
-      const client = new GatewayClient(options.host || "127.0.0.1", options.port ? parseInt(options.port, 10) : 18789);
+      const client = new GatewayClient({ 
+        host: options.host || "127.0.0.1", 
+        port: options.port ? parseInt(options.port, 10) : 18789 
+      });
       await client.connect();
 
       try {
@@ -47,30 +50,39 @@ export function createActivitiesCommand(): Command {
         let type: string | string[] | undefined;
         if (options.type) {
           type = options.type.includes(",") 
-            ? options.type.split(",").map(t => t.trim())
+            ? options.type.split(",").map((t: string) => t.trim())
             : options.type;
         }
 
-        const response = await client.call("activities.list", {
-          from,
-          to,
-          agentId: options.agent,
-          sessionId: options.session,
-          type,
-          limit: options.limit ? parseInt(options.limit, 10) : undefined,
-          offset: options.offset ? parseInt(options.offset, 10) : undefined,
+        const response = await client.call({
+          method: "activities.list",
+          params: {
+            from,
+            to,
+            agentId: options.agent,
+            conversationId: options.conversation,
+            type,
+            limit: options.limit ? parseInt(options.limit, 10) : undefined,
+            offset: options.offset ? parseInt(options.offset, 10) : undefined,
+          },
         });
+
+        if (!response.ok || !response.result) {
+          throw new Error(response.error?.message || "Failed to list activities");
+        }
+
+        const result = response.result as { activities: any[]; count: number; query: any };
 
         if (shouldOutputJson(options)) {
           outputJson(response, options);
         } else {
-          if (response.activities && response.activities.length > 0) {
-            console.log(`Found ${response.count || response.activities.length} activities:\n`);
-            for (const activity of response.activities) {
+          if (result.activities && result.activities.length > 0) {
+            console.log(`Found ${result.count || result.activities.length} activities:\n`);
+            for (const activity of result.activities) {
               const date = new Date(activity.timestamp).toISOString();
               console.log(`[${date}] ${activity.type}`);
               if (activity.agentId) console.log(`  Agent: ${activity.agentId}`);
-              if (activity.sessionId) console.log(`  Session: ${activity.sessionId}`);
+              if (activity.conversationId) console.log(`  Conversation: ${activity.conversationId}`);
               if (activity.runId) console.log(`  Run: ${activity.runId}`);
               if (activity.metadata) {
                 const metaKeys = Object.keys(activity.metadata);
@@ -104,7 +116,7 @@ export function createActivitiesCommand(): Command {
     .option("--to <timestamp>", "End timestamp (milliseconds)")
     .option("--date <date>", "Date filter (YYYY-MM-DD)")
     .option("--agent <agentId>", "Filter by agent ID")
-    .option("--session <sessionId>", "Filter by session ID")
+    .option("--conversation <conversationId>", "Filter by conversation ID")
     .option("--type <type>", "Filter by activity type (comma-separated)")
     .option("--json", "Output as JSON")
     .option("--host <host>", "Gateway host", "127.0.0.1")
@@ -112,7 +124,10 @@ export function createActivitiesCommand(): Command {
     .action(async (options) => {
       await ensureGatewayRunning(options.host, options.port);
 
-      const client = new GatewayClient(options.host || "127.0.0.1", options.port ? parseInt(options.port, 10) : 18789);
+      const client = new GatewayClient({ 
+        host: options.host || "127.0.0.1", 
+        port: options.port ? parseInt(options.port, 10) : 18789 
+      });
       await client.connect();
 
       try {
@@ -135,22 +150,31 @@ export function createActivitiesCommand(): Command {
         let type: string | string[] | undefined;
         if (options.type) {
           type = options.type.includes(",") 
-            ? options.type.split(",").map(t => t.trim())
+            ? options.type.split(",").map((t: string) => t.trim())
             : options.type;
         }
 
-        const response = await client.call("activities.count", {
-          from,
-          to,
-          agentId: options.agent,
-          sessionId: options.session,
-          type,
+        const response = await client.call({
+          method: "activities.count",
+          params: {
+            from,
+            to,
+            agentId: options.agent,
+            conversationId: options.conversation,
+            type,
+          },
         });
+
+        if (!response.ok || !response.result) {
+          throw new Error(response.error?.message || "Failed to get activity count");
+        }
+
+        const result = response.result as { count: number; query: any };
 
         if (shouldOutputJson(options)) {
           outputJson(response, options);
         } else {
-          console.log(`Total activities: ${response.count || 0}`);
+          console.log(`Total activities: ${result.count || 0}`);
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -174,18 +198,30 @@ export function createActivitiesCommand(): Command {
     .action(async (options) => {
       await ensureGatewayRunning(options.host, options.port);
 
-      const client = new GatewayClient(options.host || "127.0.0.1", options.port ? parseInt(options.port, 10) : 18789);
+      const client = new GatewayClient({ 
+        host: options.host || "127.0.0.1", 
+        port: options.port ? parseInt(options.port, 10) : 18789 
+      });
       await client.connect();
 
       try {
-        const response = await client.call("activities.range", {});
+        const response = await client.call({
+          method: "activities.range",
+          params: {},
+        });
+
+        if (!response.ok || !response.result) {
+          throw new Error(response.error?.message || "Failed to get date range");
+        }
+
+        const result = response.result as { range: { from: number; to: number } | null };
 
         if (shouldOutputJson(options)) {
           outputJson(response, options);
         } else {
-          if (response.range) {
-            const fromDate = new Date(response.range.from).toISOString();
-            const toDate = new Date(response.range.to).toISOString();
+          if (result.range) {
+            const fromDate = new Date(result.range.from).toISOString();
+            const toDate = new Date(result.range.to).toISOString();
             console.log(`Available date range:`);
             console.log(`  From: ${fromDate}`);
             console.log(`  To: ${toDate}`);

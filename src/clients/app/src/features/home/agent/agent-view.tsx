@@ -76,7 +76,7 @@ interface ActivityItem {
   type: string;
   timestamp: number;
   agentId?: string;
-  sessionId?: string;
+  conversationId?: string;
   runId?: string;
   metadata: Record<string, unknown>;
 }
@@ -97,7 +97,7 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
     { id: "overview" as AgentTab, label: "Overview", icon: <Info className="h-4 w-4" /> },
     { id: "prompts" as AgentTab, label: "Prompts", icon: <FileText className="h-4 w-4" /> },
     { id: "tools" as AgentTab, label: "Tools", icon: <Wrench className="h-4 w-4" /> },
-    { id: "sessions" as AgentTab, label: "Sessions", icon: <MessageSquare className="h-4 w-4" /> },
+    { id: "conversations" as AgentTab, label: "Conversations", icon: <MessageSquare className="h-4 w-4" /> },
     { id: "activities" as AgentTab, label: "Activities", icon: <Activity className="h-4 w-4" /> },
   ];
 
@@ -234,8 +234,8 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
       "agent.run.error": "Agent run failed",
       "tool.call": "Called tool",
       "tool.result": "Tool completed",
-      "session.create": "Created session",
-      "session.update": "Updated session",
+      "conversation.create": "Created conversation",
+      "conversation.update": "Updated conversation",
       "channel.message.incoming": "Received message",
       "channel.message.outgoing": "Sent message",
       "calendar.event.triggered": "Triggered calendar event",
@@ -252,8 +252,8 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
     if (type === "agent.run.error") return <XCircle className="h-4 w-4" />;
     if (type.startsWith("tool.call")) return <Terminal className="h-4 w-4" />;
     if (type.startsWith("tool.result")) return <CheckCircle2 className="h-4 w-4" />;
-    if (type === "session.create") return <Circle className="h-4 w-4" />;
-    if (type === "session.update") return <Circle className="h-4 w-4" />;
+    if (type === "conversation.create") return <Circle className="h-4 w-4" />;
+    if (type === "conversation.update") return <Circle className="h-4 w-4" />;
     if (type === "channel.message.incoming") return <Inbox className="h-4 w-4" />;
     if (type === "channel.message.outgoing") return <Send className="h-4 w-4" />;
     if (type.startsWith("calendar.")) return <Calendar className="h-4 w-4" />;
@@ -265,7 +265,7 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
     if (type === "agent.run.error") return "text-red-600 dark:text-red-400";
     if (type === "agent.run") return "text-blue-600 dark:text-blue-400";
     if (type.startsWith("tool.")) return "text-purple-600 dark:text-purple-400";
-    if (type.startsWith("session.")) return "text-orange-600 dark:text-orange-400";
+    if (type.startsWith("conversation.")) return "text-orange-600 dark:text-orange-400";
     if (type.startsWith("channel.")) return "text-cyan-600 dark:text-cyan-400";
     if (type.startsWith("calendar.")) return "text-pink-600 dark:text-pink-400";
     return "text-muted-foreground";
@@ -276,7 +276,7 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
     if (type === "agent.run.error") return "bg-red-100 dark:bg-red-900/20";
     if (type === "agent.run") return "bg-blue-100 dark:bg-blue-900/20";
     if (type.startsWith("tool.")) return "bg-purple-100 dark:bg-purple-900/20";
-    if (type.startsWith("session.")) return "bg-orange-100 dark:bg-orange-900/20";
+    if (type.startsWith("conversation.")) return "bg-orange-100 dark:bg-orange-900/20";
     if (type.startsWith("channel.")) return "bg-cyan-100 dark:bg-cyan-900/20";
     if (type.startsWith("calendar.")) return "bg-pink-100 dark:bg-pink-900/20";
     return "bg-muted";
@@ -373,8 +373,8 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
     if (type === "tool.result" && metadata.toolName) {
       return `Tool: ${String(metadata.toolName)} completed`;
     }
-    if (type === "session.create" && metadata.sessionLabel) {
-      return `Session: ${String(metadata.sessionLabel)}`;
+    if (type === "conversation.create" && metadata.conversationLabel) {
+      return `Conversation: ${String(metadata.conversationLabel)}`;
     }
     if (type === "channel.message.incoming" && metadata.channel && metadata.from) {
       return `From ${String(metadata.from)} via ${String(metadata.channel)}`;
@@ -389,13 +389,13 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
     return "";
   };
 
-  // Filter sessions for this agent, sorted by lastActivity (most recent first)
-  const agentSessions = state.sessions.filter((s) => s.agentId === agentId);
-  const activeAgentSessions = agentSessions
-    .filter((s) => state.activeSessionIds.has(s.id))
+  // Filter conversations for this agent, sorted by lastActivity (most recent first)
+  const agentConversations = state.conversations.filter((s) => s.agentId === agentId);
+  const activeAgentConversations = agentConversations
+    .filter((s) => state.activeConversationIds.has(s.id))
     .sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
-  const archivedAgentSessions = agentSessions
-    .filter((s) => !state.activeSessionIds.has(s.id))
+  const archivedAgentConversations = agentConversations
+    .filter((s) => !state.activeConversationIds.has(s.id))
     .sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
 
   // Common tools list (based on project structure)
@@ -455,7 +455,7 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
                 {activeTab === "overview" && "Agent overview and quick actions"}
                 {activeTab === "prompts" && "System prompts, behavior, and personality"}
                 {activeTab === "tools" && "Available tools and capabilities"}
-                {activeTab === "sessions" && "Active and archived sessions"}
+                {activeTab === "conversations" && "Active and archived conversations"}
                 {activeTab === "activities" && "Agent activity logs and history"}
               </p>
             </div>
@@ -473,15 +473,15 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
                   <div className="px-6 py-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <div className="text-sm text-muted-foreground mb-1">Active Sessions</div>
+                        <div className="text-sm text-muted-foreground mb-1">Active Conversations</div>
                         <div className="text-2xl font-semibold text-foreground">
-                          {activeAgentSessions.length}
+                          {activeAgentConversations.length}
                         </div>
                       </div>
                       <div>
-                        <div className="text-sm text-muted-foreground mb-1">Total Sessions</div>
+                        <div className="text-sm text-muted-foreground mb-1">Total Conversations</div>
                         <div className="text-2xl font-semibold text-foreground">
-                          {agentSessions.length}
+                          {agentConversations.length}
                         </div>
                       </div>
                     </div>
@@ -499,11 +499,11 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
                       className="w-full justify-start"
                       onClick={() => {
                         state.setCurrentAgentId(agentId);
-                        state.createSession("main", agentId).then(() => onClose());
+                        state.createConversation("main", agentId).then(() => onClose());
                       }}
                     >
                       <MessageSquare className="h-4 w-4 mr-2" />
-                      New Session
+                      New Conversation
                     </Button>
                     <Button
                       variant="outline"
@@ -657,24 +657,24 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
               </div>
             )}
 
-            {activeTab === "sessions" && (
+            {activeTab === "conversations" && (
               <div className="space-y-6">
-                {/* Active Sessions */}
-                {activeAgentSessions.length > 0 && (
+                {/* Active Conversations */}
+                {activeAgentConversations.length > 0 && (
                   <div className="border border-border rounded-md bg-card">
                     <div className="px-6 py-4 border-b border-border">
-                      <h2 className="text-base font-semibold text-foreground">Active Sessions</h2>
+                      <h2 className="text-base font-semibold text-foreground">Active Conversations</h2>
                       <Badge variant="secondary" className="ml-2">
-                        {activeAgentSessions.length}
+                        {activeAgentConversations.length}
                       </Badge>
                     </div>
                     <div className="px-6 py-4 space-y-1">
-                      {activeAgentSessions.map((session) => (
-                        <div key={session.id} className="py-2">
+                      {activeAgentConversations.map((conversation) => (
+                        <div key={conversation.id} className="py-2">
                           <button
                             onClick={() => {
-                              state.setCurrentSessionId(session.id);
-                              state.addToActiveSessions(session.id);
+                              state.setCurrentConversationId(conversation.id);
+                              state.addToActiveConversations(conversation.id);
                               onClose();
                             }}
                             className="w-full text-left px-3 py-2 rounded-md hover:bg-accent transition-colors"
@@ -682,7 +682,7 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
                             <div className="flex items-center gap-2">
                               <MessageSquare className="h-4 w-4 text-muted-foreground" />
                               <span className="text-sm font-medium text-foreground">
-                                {session.label || session.id}
+                                {conversation.label || conversation.id}
                               </span>
                             </div>
                           </button>
@@ -692,8 +692,8 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
                   </div>
                 )}
 
-                {/* Archived Sessions */}
-                {archivedAgentSessions.length > 0 && (
+                {/* Archived Conversations */}
+                {archivedAgentConversations.length > 0 && (
                   <div className="border border-border rounded-md bg-card">
                     <button
                       onClick={() => setArchivedExpanded(!archivedExpanded)}
@@ -705,20 +705,20 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
                         ) : (
                           <ChevronRight className="h-4 w-4 text-muted-foreground" />
                         )}
-                        <h2 className="text-base font-semibold text-foreground">Archived Sessions</h2>
+                        <h2 className="text-base font-semibold text-foreground">Archived Conversations</h2>
                         <Badge variant="secondary">
-                          {archivedAgentSessions.length}
+                          {archivedAgentConversations.length}
                         </Badge>
                       </div>
                     </button>
                     {archivedExpanded && (
                       <div className="px-6 py-4 space-y-1">
-                        {archivedAgentSessions.map((session) => (
-                          <div key={session.id} className="py-2">
+                        {archivedAgentConversations.map((conversation) => (
+                          <div key={conversation.id} className="py-2">
                             <button
                               onClick={() => {
-                                state.setCurrentSessionId(session.id);
-                                state.addToActiveSessions(session.id);
+                                state.setCurrentConversationId(conversation.id);
+                                state.addToActiveConversations(conversation.id);
                                 onClose();
                               }}
                               className="w-full text-left px-3 py-2 rounded-md hover:bg-accent transition-colors opacity-70"
@@ -726,7 +726,7 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
                               <div className="flex items-center gap-2">
                                 <MessageSquare className="h-4 w-4 text-muted-foreground" />
                                 <span className="text-sm text-foreground">
-                                  {session.label || session.id}
+                                  {conversation.label || conversation.id}
                                 </span>
                               </div>
                             </button>
@@ -737,9 +737,9 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
                   </div>
                 )}
 
-                {agentSessions.length === 0 && (
+                {agentConversations.length === 0 && (
                   <div className="text-center py-12 text-muted-foreground">
-                    No sessions for this agent yet
+                    No conversations for this agent yet
                   </div>
                 )}
               </div>
@@ -767,7 +767,7 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
                     <option value="">All activity</option>
                     <option value="agent.run">Agent runs</option>
                     <option value="tool.call">Tool calls</option>
-                    <option value="session.create">Sessions</option>
+                    <option value="conversation.create">Conversations</option>
                     <option value="channel.message.incoming">Messages</option>
                     <option value="calendar.event.triggered">Calendar events</option>
                   </select>
@@ -848,9 +848,9 @@ export function AgentView({ agentId, state, gatewayClient, onClose }: AgentViewP
                                         
                                         {/* Metadata badges */}
                                         <div className="flex items-center gap-2 mt-2 flex-wrap">
-                                          {activity.sessionId && (
+                                          {activity.conversationId && (
                                             <Badge variant="outline" className="text-xs font-mono">
-                                              {activity.sessionId.substring(0, 8)}
+                                              {activity.conversationId.substring(0, 8)}
                                             </Badge>
                                           )}
                                           {activity.runId && (

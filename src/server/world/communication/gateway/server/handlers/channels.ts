@@ -1,7 +1,7 @@
 import type { GatewayRequestHandlers } from "../types.js";
 import { ChannelRegistry } from "@server/world/communication/messengers/channels/index.js";
 import { SimpleRouter } from "@server/world/communication/routing/index.js";
-import { SessionManager } from "@server/agents/zuckerman/sessions/index.js";
+import { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
 import { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
 import { loadConfig, saveConfig } from "@server/world/config/index.js";
 import { initializeChannels } from "@server/world/communication/messengers/channels/factory.js";
@@ -10,7 +10,7 @@ import { WhatsAppChannel } from "@server/world/communication/messengers/channels
 export function createChannelHandlers(
   channelRegistry: ChannelRegistry,
   router: SimpleRouter,
-  sessionManager: SessionManager,
+  conversationManager: ConversationManager,
   agentFactory: AgentRuntimeFactory,
   broadcastEvent?: (event: { type: "event"; event: string; payload?: unknown }) => void,
 ): Partial<GatewayRequestHandlers> {
@@ -110,7 +110,7 @@ export function createChannelHandlers(
         const newChannels = await initializeChannels(
           config,
           router,
-          sessionManager,
+          conversationManager,
           agentFactory,
           broadcastEvent,
         );

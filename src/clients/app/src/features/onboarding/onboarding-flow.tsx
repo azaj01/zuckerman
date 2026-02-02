@@ -42,7 +42,7 @@ export interface OnboardingState {
     gateway: boolean;
     llmProvider: boolean;
     agent: boolean;
-    session: boolean;
+    conversation: boolean;
   };
 }
 
@@ -86,7 +86,7 @@ export function OnboardingFlow({ onComplete, onSkip, gatewayClient }: Onboarding
       gateway: false,
       llmProvider: false,
       agent: false,
-      session: false,
+      conversation: false,
     },
   });
 

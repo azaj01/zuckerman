@@ -10,7 +10,7 @@ Core cognitive modules for the Zuckerman agent.
 - `learning/` - Learning and adaptation mechanisms
 - `memory/` - Memory management strategies
   - `loader.ts` - Prompt loading and caching
-  - `sessions/` - Session management (conversation memory)
+  - `conversations/` - Conversation management (conversation memory)
 - `awareness/` - The agent's awareness/orchestrator (runtime execution engine)
 
 ## Awareness
@@ -32,7 +32,7 @@ import { ZuckermanRuntime } from "./runtime.js";
 
 const awareness = new ZuckermanAwareness();
 const result = await awareness.run({
-  sessionId: "session-123",
+  conversationId: "conversation-123",
   message: "Hello!",
   thinkingLevel: "medium",
 });

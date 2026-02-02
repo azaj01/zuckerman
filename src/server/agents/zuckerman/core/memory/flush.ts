@@ -3,7 +3,7 @@
  * Based on OpenClaw's memory flush implementation
  */
 
-import type { SessionEntry } from "../../sessions/types.js";
+import type { ConversationEntry } from "../../conversations/types.js";
 
 export const DEFAULT_MEMORY_FLUSH_SOFT_TOKENS = 4000;
 export const DEFAULT_CONTEXT_TOKENS = 200_000; // Default large context window
@@ -17,7 +17,7 @@ export const DEFAULT_MEMORY_FLUSH_PROMPT = [
 
 export const DEFAULT_MEMORY_FLUSH_SYSTEM_PROMPT = [
   "Pre-compaction memory flush turn.",
-  "The session is near auto-compaction; capture durable memories to disk.",
+  "The conversation is near auto-compaction; capture durable memories to disk.",
   "You may reply, but usually just saving memories is correct.",
 ].join(" ");
 
@@ -133,7 +133,7 @@ export function resolveMemoryFlushContextWindowTokens(params: {
  * Determine if memory flush should run
  */
 export function shouldRunMemoryFlush(params: {
-  entry?: Pick<SessionEntry, "totalTokens" | "memoryFlushCount">;
+  entry?: Pick<ConversationEntry, "totalTokens" | "memoryFlushCount">;
   contextWindowTokens: number;
   reserveTokensFloor: number;
   softThresholdTokens: number;

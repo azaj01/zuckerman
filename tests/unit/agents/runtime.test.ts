@@ -20,7 +20,7 @@ describe("ZuckermanRuntime", () => {
 
   it("should run an agent", async () => {
     const result = await runtime.run({
-      sessionId: "test-session",
+      conversationId: "test-conversation",
       message: "Hello",
     });
 

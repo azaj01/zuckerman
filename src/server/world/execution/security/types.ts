@@ -2,10 +2,10 @@
  * Core security types and interfaces
  */
 
-import type { SessionType } from "@server/agents/zuckerman/sessions/types.js";
+import type { ConversationType } from "@server/agents/zuckerman/conversations/types.js";
 
 export type SandboxMode = "off" | "non-main" | "all";
-export type SandboxScope = "per-session" | "per-agent" | "shared";
+export type SandboxScope = "per-conversation" | "per-agent" | "shared";
 export type WorkspaceAccess = "ro" | "rw" | "none";
 export type ToolProfile = "minimal" | "coding" | "messaging" | "full";
 
@@ -61,7 +61,7 @@ export interface ExecutionSecurity {
   blockedPaths?: string[];
 }
 
-export interface SessionSecurity {
+export interface ConversationSecurity {
   sandbox?: boolean;
   tools?: ToolPolicy;
   execution?: ExecutionSecurity;
@@ -87,18 +87,18 @@ export interface SecurityConfig {
   sandbox?: SandboxConfig;
   tools?: ToolPolicy;
   execution?: ExecutionSecurity;
-  sessions?: {
-    main?: SessionSecurity;
-    group?: SessionSecurity;
-    channel?: SessionSecurity;
+  conversations?: {
+    main?: ConversationSecurity;
+    group?: ConversationSecurity;
+    channel?: ConversationSecurity;
   };
   gateway?: GatewayAuthConfig;
   secrets?: SecretConfig;
 }
 
 export interface SecurityContext {
-  sessionId: string;
-  sessionType: SessionType;
+  conversationId: string;
+  conversationType: ConversationType;
   agentId: string;
   isSandboxed: boolean;
   toolPolicy: ToolPolicy;

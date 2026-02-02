@@ -1,4 +1,4 @@
-import type { SessionId } from "@server/agents/zuckerman/sessions/types.js";
+import type { ConversationId } from "@server/agents/zuckerman/conversations/types.js";
 import type { SecurityContext } from "@server/world/execution/security/types.js";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -25,7 +25,7 @@ export type StreamCallback = (event: StreamEvent) => void | Promise<void>;
 import type { LLMModel } from "@server/agents/zuckerman/core/awareness/providers/types.js";
 
 export interface AgentRunParams {
-  sessionId: SessionId;
+  conversationId: ConversationId;
   message: string;
   thinkingLevel?: ThinkingLevel;
   temperature?: number;

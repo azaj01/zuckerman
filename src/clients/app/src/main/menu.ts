@@ -7,10 +7,10 @@ export function createApplicationMenu(): Menu {
       label: "File",
       submenu: [
         {
-          label: "New Session",
+          label: "New Conversation",
           accelerator: "CmdOrCtrl+N",
           click: () => {
-            windowManager.send("menu-action", "new-session");
+            windowManager.send("menu-action", "new-conversation");
           },
         },
         { type: "separator" },

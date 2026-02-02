@@ -13,10 +13,10 @@ import { createMemorySearchTool, createMemoryGetTool, createMemorySaveTool, crea
 
 export class ZuckermanToolRegistry {
   private tools = new Map<string, Tool>();
-  private sessionId: string = "";
+  private conversationId: string = "";
 
-  constructor(sessionId?: string) {
-    this.sessionId = sessionId || "";
+  constructor(conversationId?: string) {
+    this.conversationId = conversationId || "";
     
     // Register default tools
     this.register(createTerminalTool());
@@ -43,7 +43,7 @@ export class ZuckermanToolRegistry {
    */
   private registerBatchTool(): void {
     const batchContext: BatchExecutionContext = {
-      sessionId: this.sessionId,
+      conversationId: this.conversationId,
       executeTool: async (toolName, params, securityContext, executionContext) => {
         const tool = this.get(toolName);
         if (!tool) {
@@ -63,14 +63,14 @@ export class ZuckermanToolRegistry {
   }
 
   /**
-   * Update session ID and re-register batch tool
-   * This allows batch tool to have correct session context
+   * Update conversation ID and re-register batch tool
+   * This allows batch tool to have correct conversation context
    */
-  setSessionId(sessionId: string): void {
-    this.sessionId = sessionId;
+  setConversationId(conversationId: string): void {
+    this.conversationId = conversationId;
     // Remove old batch tool if exists
     this.tools.delete("batch");
-    // Re-register with new session ID
+    // Re-register with new conversation ID
     this.registerBatchTool();
   }
 

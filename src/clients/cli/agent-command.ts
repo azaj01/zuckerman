@@ -5,18 +5,18 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { ensureGatewayRunning, getGatewayServer } from "./gateway-utils.js";
 
-const SESSION_FILE = join(process.cwd(), ".zuckerman", "cli-session.json");
+const CONVERSATION_FILE = join(process.cwd(), ".zuckerman", "cli-conversation.json");
 
-interface SessionData {
-  sessionId: string;
+interface ConversationData {
+  conversationId: string;
   agentId: string;
 }
 
-async function loadSession(): Promise<SessionData | null> {
+async function loadConversation(): Promise<ConversationData | null> {
   try {
-    if (existsSync(SESSION_FILE)) {
-      const content = await readFile(SESSION_FILE, "utf-8");
-      return JSON.parse(content) as SessionData;
+    if (existsSync(CONVERSATION_FILE)) {
+      const content = await readFile(CONVERSATION_FILE, "utf-8");
+      return JSON.parse(content) as ConversationData;
     }
   } catch {
     // Ignore errors
@@ -24,13 +24,13 @@ async function loadSession(): Promise<SessionData | null> {
   return null;
 }
 
-async function saveSession(session: SessionData): Promise<void> {
+async function saveConversation(conversation: ConversationData): Promise<void> {
   try {
     const dir = join(process.cwd(), ".zuckerman");
     if (!existsSync(dir)) {
       await mkdir(dir, { recursive: true });
     }
-    await writeFile(SESSION_FILE, JSON.stringify(session, null, 2), "utf-8");
+    await writeFile(CONVERSATION_FILE, JSON.stringify(conversation, null, 2), "utf-8");
   } catch {
     // Ignore errors
   }
@@ -41,7 +41,7 @@ async function saveSession(session: SessionData): Promise<void> {
  */
 export async function runAgentInteraction(options: {
   message?: string;
-  session?: string;
+  conversation?: string;
   agent?: string;
   host?: string;
   port?: number;
@@ -63,16 +63,16 @@ export async function runAgentInteraction(options: {
     await client.connect();
     process.stderr.write("✓\n");
 
-    // Get or create session
-    let sessionId = options.session;
-    if (!sessionId) {
-      const saved = await loadSession();
+    // Get or create conversation
+    let conversationId = options.conversation;
+    if (!conversationId) {
+      const saved = await loadConversation();
       if (saved && saved.agentId === (options.agent || "zuckerman")) {
-        sessionId = saved.sessionId;
+        conversationId = saved.conversationId;
       } else {
-        // Create new session
+        // Create new conversation
         const response = await client.call({
-          method: "sessions.create",
+          method: "conversations.create",
           params: {
             label: `cli-${Date.now()}`,
             type: "main",
@@ -81,14 +81,14 @@ export async function runAgentInteraction(options: {
         });
 
         if (!response.ok || !response.result) {
-          throw new Error(`Failed to create session: ${response.error?.message || "Unknown error"}`);
+          throw new Error(`Failed to create conversation: ${response.error?.message || "Unknown error"}`);
         }
 
-        const session = (response.result as { session: { id: string } }).session;
-        sessionId = session.id;
+        const conversation = (response.result as { conversation: { id: string } }).conversation;
+        conversationId = conversation.id;
 
-        await saveSession({
-          sessionId,
+        await saveConversation({
+          conversationId,
           agentId: options.agent || "zuckerman",
         });
       }
@@ -101,7 +101,7 @@ export async function runAgentInteraction(options: {
       const response = await client.call({
         method: "agent.run",
         params: {
-          sessionId,
+          conversationId,
           message: options.message,
           agentId,
         },
@@ -127,13 +127,13 @@ export async function runAgentInteraction(options: {
       // Cleanup gateway if we started it
       const server = getGatewayServer();
       if (server) {
-        await server.close("Agent session ended");
+        await server.close("Agent conversation ended");
       }
       return;
     }
 
     // Interactive mode
-    console.log(`\n🤖 Zuckerman Agent (session: ${sessionId.slice(0, 8)}...)\n`);
+    console.log(`\n🤖 Zuckerman Agent (conversation: ${conversationId.slice(0, 8)}...)\n`);
     console.log("Type your message and press Enter. Type 'exit' or 'quit' to end.\n");
 
     const rl = createInterface({
@@ -163,7 +163,7 @@ export async function runAgentInteraction(options: {
         // Cleanup gateway if we started it
         const server = getGatewayServer();
         if (server) {
-          await server.close("Agent session ended");
+          await server.close("Agent conversation ended");
         }
         console.log("\nGoodbye!");
         return;
@@ -178,8 +178,8 @@ export async function runAgentInteraction(options: {
       const streamUnsubscribers: Array<() => void> = [];
 
       const tokenUnsub = client.on("agent.stream.token", (payload: unknown) => {
-        const data = payload as { token?: string; sessionId?: string };
-        if (data.token && data.sessionId === sessionId) {
+        const data = payload as { token?: string; conversationId?: string };
+        if (data.token && data.conversationId === conversationId) {
           if (!isStreaming) {
             // Clear thinking indicator and start streaming
             process.stdout.write(" ".repeat(20) + "\r");
@@ -191,8 +191,8 @@ export async function runAgentInteraction(options: {
       });
 
       const toolCallUnsub = client.on("agent.stream.tool.call", (payload: unknown) => {
-        const data = payload as { tool?: string; toolArgs?: Record<string, unknown>; sessionId?: string };
-        if (data.tool && data.sessionId === sessionId) {
+        const data = payload as { tool?: string; toolArgs?: Record<string, unknown>; conversationId?: string };
+        if (data.tool && data.conversationId === conversationId) {
           if (!isStreaming) {
             process.stdout.write(" ".repeat(20) + "\r");
             isStreaming = true;
@@ -202,8 +202,8 @@ export async function runAgentInteraction(options: {
       });
 
       const toolResultUnsub = client.on("agent.stream.tool.result", (payload: unknown) => {
-        const data = payload as { tool?: string; toolResult?: unknown; sessionId?: string };
-        if (data.tool && data.sessionId === sessionId) {
+        const data = payload as { tool?: string; toolResult?: unknown; conversationId?: string };
+        if (data.tool && data.conversationId === conversationId) {
           const resultStr = data.toolResult 
             ? JSON.stringify(data.toolResult).substring(0, 100)
             : "completed";
@@ -213,12 +213,12 @@ export async function runAgentInteraction(options: {
 
       const lifecycleUnsub = client.on("agent.stream.lifecycle", (payload: unknown) => {
         const data = payload as { 
-          sessionId?: string; 
+          conversationId?: string; 
           phase?: "start" | "end" | "error";
           error?: string;
           tokensUsed?: number;
         };
-        if (data.sessionId === sessionId) {
+        if (data.conversationId === conversationId) {
           if (data.phase === "start") {
             // Run started
             isStreaming = false;
@@ -237,8 +237,8 @@ export async function runAgentInteraction(options: {
       });
 
       const doneUnsub = client.on("agent.stream.done", (payload: unknown) => {
-        const data = payload as { sessionId?: string; tokensUsed?: number; toolsUsed?: string[] };
-        if (data.sessionId === sessionId) {
+        const data = payload as { conversationId?: string; tokensUsed?: number; toolsUsed?: string[] };
+        if (data.conversationId === conversationId) {
           if (data.tokensUsed) {
             process.stderr.write(`\n[Tokens: ${data.tokensUsed}]\n`);
           }
@@ -254,7 +254,7 @@ export async function runAgentInteraction(options: {
         const response = await client.call({
           method: "agent.run",
           params: {
-            sessionId,
+            conversationId,
             message,
             agentId,
           },
@@ -308,7 +308,7 @@ export async function runAgentInteraction(options: {
       // Cleanup gateway if we started it
       const server = getGatewayServer();
       if (server) {
-        await server.close("Agent session ended");
+        await server.close("Agent conversation ended");
       }
       process.exit(0);
     });
@@ -332,7 +332,7 @@ export async function runAgentInteraction(options: {
  */
 export async function runAgentCommand(options: {
   message?: string;
-  session?: string;
+  conversation?: string;
   agent?: string;
   host?: string;
   port?: number;

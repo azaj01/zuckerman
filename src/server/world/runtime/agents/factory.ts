@@ -1,5 +1,5 @@
 import type { AgentRuntime } from "./types.js";
-import { SessionManager } from "@server/agents/zuckerman/sessions/index.js";
+import { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
 import { loadConfig } from "@server/world/config/index.js";
 import { getAgentRuntimeClass, getRegisteredAgentIds } from "@server/agents/index.js";
 
@@ -13,7 +13,7 @@ export interface AgentRuntimeFactoryOptions {
 /**
  * Check if a class is a valid AgentRuntime implementation
  */
-function isValidRuntimeClass(cls: unknown): cls is new (sessionManager?: SessionManager) => AgentRuntime {
+function isValidRuntimeClass(cls: unknown): cls is new (conversationManager?: ConversationManager) => AgentRuntime {
   if (typeof cls !== "function") {
     return false;
   }
@@ -33,7 +33,7 @@ function isValidRuntimeClass(cls: unknown): cls is new (sessionManager?: Session
  */
 export class AgentRuntimeFactory {
   private runtimes = new Map<string, AgentRuntime>();
-  private sessionManagers = new Map<string, SessionManager>();
+  private conversationManagers = new Map<string, ConversationManager>();
   private loadErrors = new Map<string, string>();
 
   constructor(_options?: AgentRuntimeFactoryOptions) {
@@ -41,16 +41,17 @@ export class AgentRuntimeFactory {
   }
 
   /**
-   * Get or create session manager for an agent
+   * Get or create conversation manager for an agent
    */
-  getSessionManager(agentId: string): SessionManager {
-    let manager = this.sessionManagers.get(agentId);
+  getConversationManager(agentId: string): ConversationManager {
+    let manager = this.conversationManagers.get(agentId);
     if (!manager) {
-      manager = new SessionManager(agentId);
-      this.sessionManagers.set(agentId, manager);
+      manager = new ConversationManager(agentId);
+      this.conversationManagers.set(agentId, manager);
     }
     return manager;
   }
+
 
   /**
    * Get or create an agent runtime
@@ -127,8 +128,8 @@ export class AgentRuntimeFactory {
         return null;
       }
 
-      const sessionManager = this.getSessionManager(agentId);
-      return new RuntimeClass(sessionManager);
+      const conversationManager = this.getConversationManager(agentId);
+      return new RuntimeClass(conversationManager);
     } catch (err) {
       const errorDetails = err instanceof Error ? err.message : String(err);
       const stack = err instanceof Error ? err.stack : undefined;

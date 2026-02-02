@@ -12,7 +12,7 @@ import { agentDiscovery } from "./discovery.js";
 /**
  * Agent registry mapping agent IDs to their runtime classes
  */
-export const AGENT_REGISTRY: Record<string, new (sessionManager?: any) => AgentRuntime> = {
+export const AGENT_REGISTRY: Record<string, new (conversationManager?: any) => AgentRuntime> = {
   zuckerman: ZuckermanAwareness,
 };
 
@@ -33,6 +33,6 @@ export function getRegisteredAgentIds(): string[] {
 /**
  * Get agent runtime class by ID
  */
-export function getAgentRuntimeClass(agentId: string): (new (sessionManager?: any) => AgentRuntime) | undefined {
+export function getAgentRuntimeClass(agentId: string): (new (conversationManager?: any) => AgentRuntime) | undefined {
   return AGENT_REGISTRY[agentId];
 }

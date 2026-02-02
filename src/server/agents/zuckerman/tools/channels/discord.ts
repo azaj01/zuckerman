@@ -1,8 +1,8 @@
 import type { Tool } from "../terminal/index.js";
 import { isToolAllowed } from "@server/world/execution/security/policy/tool-policy.js";
 import { getChannelRegistry } from "./registry.js";
-import { SessionManager, deriveSessionKey } from "@server/agents/zuckerman/sessions/index.js";
-import { loadSessionStore, resolveSessionStorePath } from "@server/agents/zuckerman/sessions/store.js";
+import { ConversationManager, deriveConversationKey } from "@server/agents/zuckerman/conversations/index.js";
+import { loadConversationStore, resolveConversationStorePath } from "@server/agents/zuckerman/conversations/store.js";
 
 export function createDiscordTool(): Tool {
   return {
@@ -43,50 +43,50 @@ export function createDiscordTool(): Tool {
           };
         }
 
-        // Try to auto-detect channel ID from session if not provided
+        // Try to auto-detect channel ID from conversation if not provided
         let channelId = to;
         if (!channelId || channelId === "me" || channelId.toLowerCase() === "myself") {
-          if (executionContext?.sessionId && securityContext?.agentId) {
+          if (executionContext?.conversationId && securityContext?.agentId) {
             try {
-              // Use SessionManager to get session state, then derive sessionKey for reliable lookup
-              const sessionManager = new SessionManager(securityContext.agentId);
-              const sessionState = sessionManager.getSession(executionContext.sessionId);
+              // Use ConversationManager to get conversation state, then derive conversationKey for reliable lookup
+              const conversationManager = new ConversationManager(securityContext.agentId);
+              const conversationState = conversationManager.getConversation(executionContext.conversationId);
               
-              if (sessionState) {
-                // Derive sessionKey from session state
-                const sessionKey = deriveSessionKey(
+              if (conversationState) {
+                // Derive conversationKey from conversation state
+                const conversationKey = deriveConversationKey(
                   securityContext.agentId,
-                  sessionState.session.type,
-                  sessionState.session.label
+                  conversationState.conversation.type,
+                  conversationState.conversation.label
                 );
                 
-                // Load session store and look up entry by sessionKey (more reliable than searching by sessionId)
-                const storePath = resolveSessionStorePath(securityContext.agentId);
-                const store = loadSessionStore(storePath);
-                const sessionEntry = store[sessionKey];
+                // Load conversation store and look up entry by conversationKey (more reliable than searching by conversationId)
+                const storePath = resolveConversationStorePath(securityContext.agentId);
+                const store = loadConversationStore(storePath);
+                const conversationEntry = store[conversationKey];
                 
                 // Try to get channel ID from delivery context
-                if (sessionEntry) {
-                  // Check if this session is from Discord channel
-                  if (sessionEntry.lastChannel === "discord" || sessionEntry.origin?.channel === "discord") {
-                    channelId = sessionEntry.deliveryContext?.to || 
-                                sessionEntry.lastTo;
+                if (conversationEntry) {
+                  // Check if this conversation is from Discord channel
+                  if (conversationEntry.lastChannel === "discord" || conversationEntry.origin?.channel === "discord") {
+                    channelId = conversationEntry.deliveryContext?.to || 
+                                conversationEntry.lastTo;
                   }
                 }
               } else {
-                // Fallback: try to find by sessionId if session not in memory
-                const storePath = resolveSessionStorePath(securityContext.agentId);
-                const store = loadSessionStore(storePath);
-                const sessionEntry = Object.values(store).find(
-                  entry => entry.sessionId === executionContext.sessionId
+                // Fallback: try to find by conversationId if conversation not in memory
+                const storePath = resolveConversationStorePath(securityContext.agentId);
+                const store = loadConversationStore(storePath);
+                const conversationEntry = Object.values(store).find(
+                  entry => entry.conversationId === executionContext.conversationId
                 );
                 
-                if (sessionEntry && (sessionEntry.lastChannel === "discord" || sessionEntry.origin?.channel === "discord")) {
-                  channelId = sessionEntry.deliveryContext?.to || sessionEntry.lastTo;
+                if (conversationEntry && (conversationEntry.lastChannel === "discord" || conversationEntry.origin?.channel === "discord")) {
+                  channelId = conversationEntry.deliveryContext?.to || conversationEntry.lastTo;
                 }
               }
             } catch (err) {
-              console.warn("[Discord] Failed to load session for auto-detection:", err);
+              console.warn("[Discord] Failed to load conversation for auto-detection:", err);
             }
           }
           

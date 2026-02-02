@@ -1,5 +1,5 @@
 import React from "react";
-import { ChatView } from "./session/chat-view";
+import { ChatView } from "./conversation/chat-view";
 import { StatusBar } from "../../components/layout/status-bar";
 import type { UseAppReturn } from "../../hooks/use-app";
 

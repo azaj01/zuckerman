@@ -6,7 +6,7 @@ import { SignalChannel } from "./signal.js";
 import { SlackChannel } from "./slack.js";
 import type { ZuckermanConfig } from "@server/world/config/types.js";
 import type { SimpleRouter } from "@server/world/communication/routing/index.js";
-import type { SessionManager } from "@server/agents/zuckerman/sessions/index.js";
+import type { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
 import type { AgentRuntimeFactory } from "@server/world/runtime/agents/index.js";
 import type { Channel } from "./types.js";
 import { setChannelRegistry } from "@server/agents/zuckerman/tools/channels/registry.js";
@@ -18,7 +18,7 @@ import { formatMessageWithChannelSource } from "./envelope.js";
 export async function initializeChannels(
   config: ZuckermanConfig,
   router: SimpleRouter,
-  sessionManager: SessionManager, // Kept for backward compatibility, but will use factory
+  conversationManager: ConversationManager,
   agentFactory: AgentRuntimeFactory,
   broadcastEvent?: (event: { type: "event"; event: string; payload?: unknown }) => void,
 ): Promise<ChannelRegistry> {
@@ -55,22 +55,22 @@ export async function initializeChannels(
           return;
         }
 
-        // Get session manager for this agent
-        const sm = agentFactory.getSessionManager(route.agentId);
+        // Get conversation manager for this agent
+        const cm = agentFactory.getConversationManager(route.agentId);
         
-        // Get or create session
-        let session = sm.getSession(route.sessionId);
-        if (!session) {
-          const newSession = sm.createSession(
-            route.sessionKey,
+        // Get or create conversation
+        let conversation = cm.getConversation(route.conversationId);
+        if (!conversation) {
+          const newConversation = cm.createConversation(
+            route.conversationKey,
             message.metadata?.isGroup ? "group" : "main",
             route.agentId,
           );
-          session = sm.getSession(newSession.id)!;
+          conversation = cm.getConversation(newConversation.id)!;
         }
 
         // Store channel metadata for tool access
-        await sm.updateChannelMetadata(route.sessionId, {
+        await cm.updateChannelMetadata(route.conversationId, {
           channel: "whatsapp",
           to: message.from,
           accountId: "default",
@@ -79,28 +79,28 @@ export async function initializeChannels(
         // Format message with channel source prefix
         const formattedMessage = formatMessageWithChannelSource(message);
         
-        // Add message to session (store original content, but send formatted to agent)
-        sm.addMessage(route.sessionId, "user", message.content);
+        // Add message to conversation (store original content, but send formatted to agent)
+        cm.addMessage(route.conversationId, "user", message.content);
 
         // Run agent
         const config = await import("@server/world/config/index.js").then(m => m.loadConfig());
         const { resolveSecurityContext } = await import("@server/world/execution/security/context/index.js");
         const securityContext = await resolveSecurityContext(
           config.security,
-          route.sessionId,
-          session.session.type,
+          route.conversationId,
+          conversation.conversation.type,
           route.agentId,
           route.landDir,
         );
 
         const result = await runtime.run({
-          sessionId: route.sessionId,
+          conversationId: route.conversationId,
           message: formattedMessage,
           securityContext,
         });
 
-        // Add assistant response (reuse sm from above)
-        sm.addMessage(route.sessionId, "assistant", result.response);
+        // Add assistant response (reuse cm from above)
+        cm.addMessage(route.conversationId, "assistant", result.response);
 
         // Send reply back through channel
         await whatsappChannel.send(result.response, message.from);
@@ -128,25 +128,25 @@ export async function initializeChannels(
   ) => {
     channel.onMessage(async (message) => {
       try {
-        // Check for session reset commands
+        // Check for conversation reset commands
         const text = message.content.trim().toLowerCase();
         if (text === "/reset" || text === "/new" || text === "/clear" || text === "/start") {
-          // Route to get session info
+          // Route to get conversation info
           const route = await router.routeToAgent(message, {
             accountId: "default",
           });
 
-          // Get session manager for this agent
-          const sm = agentFactory.getSessionManager(route.agentId);
+          // Get conversation manager for this agent
+          const cm = agentFactory.getConversationManager(route.agentId);
           
-          // Delete existing session if it exists
-          const existingSession = sm.getSession(route.sessionId);
-          if (existingSession) {
-            sm.deleteSession(route.sessionId);
+          // Delete existing conversation if it exists
+          const existingConversation = cm.getConversation(route.conversationId);
+          if (existingConversation) {
+            cm.deleteConversation(route.conversationId);
           }
 
           // Send confirmation message
-          await channel.send("✅ Session cleared! Starting fresh conversation.", message.from);
+          await channel.send("✅ Conversation cleared! Starting fresh conversation.", message.from);
           return;
         }
 
@@ -162,22 +162,22 @@ export async function initializeChannels(
           return;
         }
 
-        // Get session manager for this agent
-        const sm = agentFactory.getSessionManager(route.agentId);
+        // Get conversation manager for this agent
+        const cm = agentFactory.getConversationManager(route.agentId);
         
-        // Get or create session
-        let session = sm.getSession(route.sessionId);
-        if (!session) {
-          const newSession = sm.createSession(
-            route.sessionKey,
+        // Get or create conversation
+        let conversation = cm.getConversation(route.conversationId);
+        if (!conversation) {
+          const newConversation = cm.createConversation(
+            route.conversationKey,
             message.metadata?.isGroup ? "group" : "main",
             route.agentId,
           );
-          session = sm.getSession(newSession.id)!;
+          conversation = cm.getConversation(newConversation.id)!;
         }
 
         // Store channel metadata for tool access
-        await sm.updateChannelMetadata(route.sessionId, {
+        await cm.updateChannelMetadata(route.conversationId, {
           channel: channelId,
           to: message.from,
           accountId: "default",
@@ -186,14 +186,14 @@ export async function initializeChannels(
         // Format message with channel source prefix
         const formattedMessage = formatMessageWithChannelSource(message);
         
-        // Add message to session (store original content, but send formatted to agent)
-        sm.addMessage(route.sessionId, "user", message.content);
+        // Add message to conversation (store original content, but send formatted to agent)
+        cm.addMessage(route.conversationId, "user", message.content);
 
         // Record incoming channel message
         const { activityRecorder } = await import("@server/world/activity/index.js");
         await activityRecorder.recordChannelMessageIncoming(
           route.agentId,
-          route.sessionId,
+          route.conversationId,
           channelId,
           message.from,
           message.content,
@@ -204,20 +204,20 @@ export async function initializeChannels(
         const { resolveSecurityContext } = await import("@server/world/execution/security/context/index.js");
         const securityContext = await resolveSecurityContext(
           config.security,
-          route.sessionId,
-          session.session.type,
+          route.conversationId,
+          conversation.conversation.type,
           route.agentId,
           route.landDir,
         );
 
         const result = await runtime.run({
-          sessionId: route.sessionId,
+          conversationId: route.conversationId,
           message: formattedMessage,
           securityContext,
         });
 
-        // Add assistant response (reuse sm from above)
-        sm.addMessage(route.sessionId, "assistant", result.response);
+        // Add assistant response (reuse cm from above)
+        cm.addMessage(route.conversationId, "assistant", result.response);
 
         // Send reply back through channel
         await channel.send(result.response, message.from);
@@ -225,7 +225,7 @@ export async function initializeChannels(
         // Record outgoing channel message
         await activityRecorder.recordChannelMessageOutgoing(
           route.agentId,
-          route.sessionId,
+          route.conversationId,
           channelId,
           message.from,
           result.response,

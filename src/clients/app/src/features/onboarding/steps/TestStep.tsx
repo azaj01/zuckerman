@@ -31,7 +31,7 @@ export function TestStep({
     { id: "gateway", label: "Gateway connection", status: "pending" },
     { id: "llmProvider", label: "LLM provider", status: "pending" },
     { id: "agent", label: "Agent configuration", status: "pending" },
-    { id: "session", label: "Session creation", status: "pending" },
+    { id: "conversation", label: "Conversation creation", status: "pending" },
   ]);
   const [running, setRunning] = useState(false);
 
@@ -127,8 +127,8 @@ export function TestStep({
       });
     }
 
-    // Test 4: Session
-    updateTest("session", { status: "testing" });
+    // Test 4: Conversation
+    updateTest("conversation", { status: "testing" });
     try {
       if (!gatewayClient || !gatewayClient.isConnected()) {
         throw new Error("Gateway not connected");
@@ -136,38 +136,38 @@ export function TestStep({
       if (!state.agent.agentId) {
         throw new Error("No agent selected");
       }
-      // Try to create a test session
-      const response = await gatewayClient.request("sessions.create", {
+      // Try to create a test conversation
+      const response = await gatewayClient.request("conversations.create", {
         type: "main",
         agentId: state.agent.agentId,
-        label: "test-session",
+        label: "test-conversation",
       });
       if (!response.ok || !response.result) {
-        throw new Error(response.error?.message || "Failed to create session");
+        throw new Error(response.error?.message || "Failed to create conversation");
       }
-      const result = response.result as { session: { id: string } };
+      const result = response.result as { conversation: { id: string } };
       
-      if (result.session) {
-        // Clean up test session
+      if (result.conversation) {
+        // Clean up test conversation
         try {
-          await gatewayClient.request("sessions.delete", {
-            id: result.session.id,
+          await gatewayClient.request("conversations.delete", {
+            id: result.conversation.id,
           });
         } catch {
           // Ignore cleanup errors
         }
       }
-      updateTest("session", { status: "success" });
+      updateTest("conversation", { status: "success" });
       onUpdate({
-        testResults: { ...state.testResults, session: true },
+        testResults: { ...state.testResults, conversation: true },
       });
     } catch (error: any) {
-      updateTest("session", {
+      updateTest("conversation", {
         status: "error",
-        error: error.message || "Session creation failed",
+        error: error.message || "Conversation creation failed",
       });
       onUpdate({
-        testResults: { ...state.testResults, session: false },
+        testResults: { ...state.testResults, conversation: false },
       });
     }
 

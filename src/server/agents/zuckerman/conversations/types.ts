@@ -1,21 +1,21 @@
-export type SessionId = string;
-export type SessionKey = string;
-export type SessionLabel = string;
+export type ConversationId = string;
+export type ConversationKey = string;
+export type ConversationLabel = string;
 
-export type SessionType = "main" | "group" | "channel";
+export type ConversationType = "main" | "group" | "channel";
 
-export interface Session {
-  id: SessionId;
-  label: SessionLabel;
-  type: SessionType;
+export interface Conversation {
+  id: ConversationId;
+  label: ConversationLabel;
+  type: ConversationType;
   createdAt: number;
   lastActivity: number;
   agentId?: string;
   metadata?: Record<string, unknown>;
 }
 
-export interface SessionState {
-  session: Session;
+export interface ConversationState {
+  conversation: Conversation;
   messages: Array<{
     role: "user" | "assistant" | "system" | "tool";
     content: string;
@@ -30,11 +30,11 @@ export interface SessionState {
 }
 
 /**
- * Session entry stored in sessions.json
- * Tracks metadata and token usage per session
+ * Conversation entry stored in conversations.json
+ * Tracks metadata and token usage per conversation
  */
-export interface SessionEntry {
-  sessionId: SessionId;
+export interface ConversationEntry {
+  conversationId: ConversationId;
   updatedAt: number;
   createdAt?: number;
   inputTokens?: number;
@@ -69,9 +69,9 @@ export interface SessionEntry {
   modelOverride?: string;
   providerOverride?: string;
   temperatureOverride?: number;
-  timeoutSecondsOverride?: number; // Per-session timeout override
+  timeoutSecondsOverride?: number; // Per-conversation timeout override
   lastTranscriptId?: string; // Track last written transcript entry to prevent duplicates
-  memoryFlushCount?: number; // Track number of memory flushes for this session
+  memoryFlushCount?: number; // Track number of memory flushes for this conversation
   memoryFlushAt?: number; // Timestamp of last memory flush
 }
 

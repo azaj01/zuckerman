@@ -10,7 +10,7 @@ export function createActivityHandlers(): Partial<GatewayRequestHandlers> {
           from: params?.from as number | undefined,
           to: params?.to as number | undefined,
           agentId: params?.agentId as string | undefined,
-          sessionId: params?.sessionId as string | undefined,
+          conversationId: params?.conversationId as string | undefined,
           type: params?.type as ActivityQuery["type"],
           limit: params?.limit as number | undefined,
           offset: params?.offset as number | undefined,
@@ -38,7 +38,7 @@ export function createActivityHandlers(): Partial<GatewayRequestHandlers> {
           from: params?.from as number | undefined,
           to: params?.to as number | undefined,
           agentId: params?.agentId as string | undefined,
-          sessionId: params?.sessionId as string | undefined,
+          conversationId: params?.conversationId as string | undefined,
           type: params?.type as ActivityQuery["type"],
         };
 

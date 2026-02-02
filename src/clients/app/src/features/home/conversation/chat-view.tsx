@@ -123,7 +123,7 @@ export function ChatView({ state, onAction }: ChatViewProps) {
     }
   }, [input]);
 
-  const currentSession = state.sessions.find((s) => s.id === state.currentSessionId);
+  const currentConversation = state.conversations.find((s) => s.id === state.currentConversationId);
 
   return (
     <div
@@ -173,24 +173,24 @@ export function ChatView({ state, onAction }: ChatViewProps) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="text-[13px] text-foreground hover:text-foreground flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-accent transition-colors font-medium">
-                {currentSession?.label || state.currentSessionId || "Select session"}
+                {currentConversation?.label || state.currentConversationId || "Select conversation"}
                 <ChevronDown className="h-4 w-4 opacity-60" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
-              {state.sessions.length === 0 ? (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">No sessions</div>
+              {state.conversations.length === 0 ? (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">No conversations</div>
               ) : (
-                [...state.sessions]
+                [...state.conversations]
                   .sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0))
-                  .map((session) => (
+                  .map((conversation) => (
                     <DropdownMenuItem
-                      key={session.id}
-                      onClick={() => onAction("select-session", { sessionId: session.id })}
-                      className={session.id === state.currentSessionId ? "bg-accent" : ""}
+                      key={conversation.id}
+                      onClick={() => onAction("select-conversation", { conversationId: conversation.id })}
+                      className={conversation.id === state.currentConversationId ? "bg-accent" : ""}
                     >
-                      {session.label || session.id}
-                      {session.id === state.currentSessionId && (
+                      {conversation.label || conversation.id}
+                      {conversation.id === state.currentConversationId && (
                         <CheckCircle2 className="h-3.5 w-3.5 ml-auto text-primary" />
                       )}
                     </DropdownMenuItem>

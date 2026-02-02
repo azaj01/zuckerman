@@ -133,7 +133,7 @@ export interface LLMConfig {
 export interface SecurityConfig {
   sandbox?: {
     mode?: "off" | "non-main" | "all";
-    scope?: "per-session" | "per-agent" | "shared";
+    scope?: "per-conversation" | "per-agent" | "shared";
     workspaceAccess?: "ro" | "rw" | "none";
     docker?: {
       image?: string;
@@ -165,12 +165,20 @@ export interface SecurityConfig {
     allowedPaths?: string[];
     blockedPaths?: string[];
   };
-  sessions?: {
+  conversations?: {
     main?: {
       sandbox?: boolean;
       tools?: {
         allow?: string[];
         deny?: string[];
+      };
+      execution?: {
+        allowlist?: string[];
+        denylist?: string[];
+        timeout?: number;
+        maxOutput?: number;
+        allowedPaths?: string[];
+        blockedPaths?: string[];
       };
     };
     group?: {
@@ -179,12 +187,28 @@ export interface SecurityConfig {
         allow?: string[];
         deny?: string[];
       };
+      execution?: {
+        allowlist?: string[];
+        denylist?: string[];
+        timeout?: number;
+        maxOutput?: number;
+        allowedPaths?: string[];
+        blockedPaths?: string[];
+      };
     };
     channel?: {
       sandbox?: boolean;
       tools?: {
         allow?: string[];
         deny?: string[];
+      };
+      execution?: {
+        allowlist?: string[];
+        denylist?: string[];
+        timeout?: number;
+        maxOutput?: number;
+        allowedPaths?: string[];
+        blockedPaths?: string[];
       };
     };
   };

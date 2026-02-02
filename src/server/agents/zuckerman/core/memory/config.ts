@@ -3,7 +3,7 @@
  * Based on OpenClaw's memory search configuration
  */
 
-export type MemorySource = "memory" | "sessions";
+export type MemorySource = "memory" | "conversations";
 
 export type MemorySearchConfig = {
   enabled?: boolean;
@@ -41,12 +41,12 @@ export type MemorySearchConfig = {
     overlap?: number;
   };
   sync?: {
-    onSessionStart?: boolean;
+    onConversationStart?: boolean;
     onSearch?: boolean;
     watch?: boolean;
     watchDebounceMs?: number;
     intervalMinutes?: number;
-    sessions?: {
+    conversations?: {
       deltaBytes?: number;
       deltaMessages?: number;
     };
@@ -103,12 +103,12 @@ export type ResolvedMemorySearchConfig = {
     overlap: number;
   };
   sync: {
-    onSessionStart: boolean;
+    onConversationStart: boolean;
     onSearch: boolean;
     watch: boolean;
     watchDebounceMs: number;
     intervalMinutes: number;
-    sessions: {
+    conversations: {
       deltaBytes: number;
       deltaMessages: number;
     };
@@ -134,8 +134,8 @@ const DEFAULT_GEMINI_MODEL = "gemini-embedding-001";
 const DEFAULT_CHUNK_TOKENS = 400;
 const DEFAULT_CHUNK_OVERLAP = 80;
 const DEFAULT_WATCH_DEBOUNCE_MS = 1500;
-const DEFAULT_SESSION_DELTA_BYTES = 100_000;
-const DEFAULT_SESSION_DELTA_MESSAGES = 50;
+const DEFAULT_CONVERSATION_DELTA_BYTES = 100_000;
+const DEFAULT_CONVERSATION_DELTA_MESSAGES = 50;
 const DEFAULT_MAX_RESULTS = 6;
 const DEFAULT_MIN_SCORE = 0.35;
 const DEFAULT_HYBRID_ENABLED = true;
@@ -151,7 +151,7 @@ function normalizeSources(
   const normalized = new Set<MemorySource>();
   const input = sources?.length ? sources : DEFAULT_SOURCES;
   for (const source of input) {
-    if (source === "memory" || source === "sessions") {
+    if (source === "memory" || source === "conversations") {
       normalized.add(source);
     }
   }
@@ -228,15 +228,16 @@ export function resolveMemorySearchConfig(
     overlap: config.chunking?.overlap ?? DEFAULT_CHUNK_OVERLAP,
   };
 
+  const conversationsConfig = config.sync?.conversations;
   const sync = {
-    onSessionStart: config.sync?.onSessionStart ?? true,
+    onConversationStart: config.sync?.onConversationStart ?? true,
     onSearch: config.sync?.onSearch ?? true,
     watch: config.sync?.watch ?? true,
     watchDebounceMs: config.sync?.watchDebounceMs ?? DEFAULT_WATCH_DEBOUNCE_MS,
     intervalMinutes: config.sync?.intervalMinutes ?? 0,
-    sessions: {
-      deltaBytes: config.sync?.sessions?.deltaBytes ?? DEFAULT_SESSION_DELTA_BYTES,
-      deltaMessages: config.sync?.sessions?.deltaMessages ?? DEFAULT_SESSION_DELTA_MESSAGES,
+    conversations: {
+      deltaBytes: conversationsConfig?.deltaBytes ?? DEFAULT_CONVERSATION_DELTA_BYTES,
+      deltaMessages: conversationsConfig?.deltaMessages ?? DEFAULT_CONVERSATION_DELTA_MESSAGES,
     },
   };
 
@@ -280,9 +281,9 @@ export function resolveMemorySearchConfig(
     chunking: { tokens: Math.max(1, chunking.tokens), overlap },
     sync: {
       ...sync,
-      sessions: {
-        deltaBytes: Math.max(0, sync.sessions.deltaBytes),
-        deltaMessages: Math.max(0, sync.sessions.deltaMessages),
+      conversations: {
+        deltaBytes: Math.max(0, sync.conversations.deltaBytes),
+        deltaMessages: Math.max(0, sync.conversations.deltaMessages),
       },
     },
     query: {

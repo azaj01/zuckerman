@@ -8,13 +8,13 @@ export function createAgentsCommand(): Command {
   const cmd = new Command("agents")
     .description("Work with agents (list, interact)")
     .argument("[agent-id]", "Agent ID (shorthand for 'run')")
-    .option("-s, --session <session>", "Session ID to use")
+    .option("-c, --conversation <conversation>", "Conversation ID to use")
     .option("--host <host>", "Gateway host", "127.0.0.1")
     .option("--port <port>", "Gateway port", "18789")
     .action(async (
       agentId: string | undefined,
       options: {
-        session?: string;
+        conversation?: string;
         host?: string;
         port?: string;
       },
@@ -24,7 +24,7 @@ export function createAgentsCommand(): Command {
       if (agentId) {
         await runAgentInteraction({
           agent: agentId,
-          session: options.session,
+          conversation: options.conversation,
           host: options.host,
           port: options.port ? parseInt(options.port, 10) : undefined,
         });
@@ -91,7 +91,7 @@ export function createAgentsCommand(): Command {
     .description("Run an agent (interactive or single message)")
     .argument("<agent-id>", "Agent ID to run")
     .option("-m, --message <message>", "Send a single message (non-interactive)")
-    .option("-s, --session <session>", "Session ID to use")
+    .option("-c, --conversation <conversation>", "Conversation ID to use")
     .option("--host <host>", "Gateway host", "127.0.0.1")
     .option("--port <port>", "Gateway port", "18789")
     .option("--json", "Output as JSON (only works with --message)")
@@ -100,7 +100,7 @@ export function createAgentsCommand(): Command {
       agentId: string,
       options: {
         message?: string;
-        session?: string;
+        conversation?: string;
         host?: string;
         port?: string;
         json?: boolean;
@@ -129,7 +129,7 @@ export function createAgentsCommand(): Command {
           await client.connect();
 
           // Parse JSON input if provided (only if --input is used)
-          let messageData: { message?: string; sessionId?: string } = {};
+          let messageData: { message?: string; conversationId?: string } = {};
           if (options.input) {
             const input = await parseJsonInput(options.input);
             messageData = input as typeof messageData;
@@ -144,34 +144,34 @@ export function createAgentsCommand(): Command {
           }
 
           const finalMessage = messageData.message || message;
-          const sessionId = messageData.sessionId || options.session;
+          const conversationId = messageData.conversationId || options.conversation;
 
           if (!finalMessage) {
             console.error("Error: Message is required");
             process.exit(1);
           }
 
-          // Get or create session
-          let finalSessionId = sessionId;
-          if (!finalSessionId) {
-            const sessionResponse = await client.call({
-              method: "sessions.create",
+          // Get or create conversation
+          let finalConversationId = conversationId;
+          if (!finalConversationId) {
+            const conversationResponse = await client.call({
+              method: "conversations.create",
               params: {
                 label: `cli-${Date.now()}`,
                 type: "main",
                 agentId,
               },
             });
-            if (sessionResponse.ok && sessionResponse.result) {
-              const sessionResult = sessionResponse.result as { session: { id: string } };
-              finalSessionId = sessionResult.session.id;
+            if (conversationResponse.ok && conversationResponse.result) {
+              const conversationResult = conversationResponse.result as { conversation: { id: string } };
+              finalConversationId = conversationResult.conversation.id;
             }
           }
 
           const response = await client.call({
             method: "agent.run",
             params: {
-              sessionId: finalSessionId,
+              conversationId: finalConversationId,
               agentId,
               message: finalMessage,
             },
@@ -210,7 +210,7 @@ export function createAgentsCommand(): Command {
       await runAgentInteraction({
         agent: agentId,
         message: options.message,
-        session: options.session,
+        conversation: options.conversation,
         host: options.host,
         port: options.port ? parseInt(options.port, 10) : undefined,
       });

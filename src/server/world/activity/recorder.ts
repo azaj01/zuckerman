@@ -11,7 +11,7 @@ class ActivityRecorder {
     metadata: Activity["metadata"],
     options?: {
       agentId?: string;
-      sessionId?: string;
+      conversationId?: string;
       runId?: string;
       timestamp?: number;
     },
@@ -21,7 +21,7 @@ class ActivityRecorder {
       type,
       timestamp: options?.timestamp || Date.now(),
       agentId: options?.agentId,
-      sessionId: options?.sessionId,
+      conversationId: options?.conversationId,
       runId: options?.runId,
       metadata,
     };
@@ -39,7 +39,7 @@ class ActivityRecorder {
    */
   async recordAgentRunStart(
     agentId: string,
-    sessionId: string,
+    conversationId: string,
     runId: string,
     message: string,
   ): Promise<void> {
@@ -47,7 +47,7 @@ class ActivityRecorder {
       message,
     }, {
       agentId,
-      sessionId,
+      conversationId,
       runId,
     });
   }
@@ -57,7 +57,7 @@ class ActivityRecorder {
    */
   async recordAgentRunComplete(
     agentId: string,
-    sessionId: string,
+    conversationId: string,
     runId: string,
     response: string,
     tokensUsed?: number,
@@ -69,7 +69,7 @@ class ActivityRecorder {
       toolsUsed,
     }, {
       agentId,
-      sessionId,
+      conversationId,
       runId,
     });
   }
@@ -79,7 +79,7 @@ class ActivityRecorder {
    */
   async recordAgentRunError(
     agentId: string,
-    sessionId: string,
+    conversationId: string,
     runId: string,
     error: string,
   ): Promise<void> {
@@ -87,7 +87,7 @@ class ActivityRecorder {
       error,
     }, {
       agentId,
-      sessionId,
+      conversationId,
       runId,
     });
   }
@@ -97,7 +97,7 @@ class ActivityRecorder {
    */
   async recordToolCall(
     agentId: string,
-    sessionId: string,
+    conversationId: string,
     runId: string,
     toolName: string,
     toolArgs: Record<string, unknown>,
@@ -107,7 +107,7 @@ class ActivityRecorder {
       toolArgs,
     }, {
       agentId,
-      sessionId,
+      conversationId,
       runId,
     });
   }
@@ -117,7 +117,7 @@ class ActivityRecorder {
    */
   async recordToolResult(
     agentId: string,
-    sessionId: string,
+    conversationId: string,
     runId: string,
     toolName: string,
     toolResult: unknown,
@@ -127,7 +127,7 @@ class ActivityRecorder {
       toolResult,
     }, {
       agentId,
-      sessionId,
+      conversationId,
       runId,
     });
   }
@@ -137,7 +137,7 @@ class ActivityRecorder {
    */
   async recordToolError(
     agentId: string,
-    sessionId: string,
+    conversationId: string,
     runId: string,
     toolName: string,
     error: string,
@@ -147,49 +147,49 @@ class ActivityRecorder {
       toolError: error,
     }, {
       agentId,
-      sessionId,
+      conversationId,
       runId,
     });
   }
   
   /**
-   * Record session creation
+   * Record conversation creation
    */
-  async recordSessionCreate(
+  async recordConversationCreate(
     agentId: string,
-    sessionId: string,
-    sessionType: string,
-    sessionLabel: string,
+    conversationId: string,
+    conversationType: string,
+    conversationLabel: string,
   ): Promise<void> {
-    await this.record("session.create", {
-      sessionType,
-      sessionLabel,
+    await this.record("conversation.create", {
+      conversationType,
+      conversationLabel,
     }, {
       agentId,
-      sessionId,
+      conversationId,
     });
   }
   
   /**
-   * Record session update
+   * Record conversation update
    */
-  async recordSessionUpdate(
+  async recordConversationUpdate(
     agentId: string,
-    sessionId: string,
+    conversationId: string,
     metadata?: Record<string, unknown>,
   ): Promise<void> {
-    await this.record("session.update", metadata || {}, {
+    await this.record("conversation.update", metadata || {}, {
       agentId,
-      sessionId,
+      conversationId,
     });
   }
-  
+
   /**
    * Record incoming channel message
    */
   async recordChannelMessageIncoming(
     agentId: string,
-    sessionId: string,
+    conversationId: string,
     channel: string,
     from: string,
     content: string,
@@ -200,7 +200,7 @@ class ActivityRecorder {
       content,
     }, {
       agentId,
-      sessionId,
+      conversationId,
     });
   }
   
@@ -209,7 +209,7 @@ class ActivityRecorder {
    */
   async recordChannelMessageOutgoing(
     agentId: string,
-    sessionId: string,
+    conversationId: string,
     channel: string,
     to: string,
     content: string,
@@ -220,7 +220,7 @@ class ActivityRecorder {
       content,
     }, {
       agentId,
-      sessionId,
+      conversationId,
     });
   }
   
@@ -231,14 +231,14 @@ class ActivityRecorder {
     agentId: string,
     eventId: string,
     eventTitle: string,
-    sessionId?: string,
+    conversationId?: string,
   ): Promise<void> {
     await this.record("calendar.event.triggered", {
       eventId,
       eventTitle,
     }, {
       agentId,
-      sessionId,
+      conversationId,
     });
   }
   

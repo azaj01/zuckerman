@@ -1,27 +1,27 @@
 import type { GatewayClient } from "../core/gateway/client";
 import type { Message, BackendMessage } from "../types/message";
-import { SessionService } from "../sessions/session-service";
+import { ConversationService } from "../conversations/conversation-service";
 
 /**
  * Message service - handles message operations including deduplication
  */
 export class MessageService {
-  private sessionService: SessionService;
+  private conversationService: ConversationService;
 
   constructor(
     private client: GatewayClient,
-    sessionService?: SessionService
+    conversationService?: ConversationService
   ) {
     // Allow dependency injection, fallback to creating new instance
-    this.sessionService = sessionService || new SessionService(client);
+    this.conversationService = conversationService || new ConversationService(client);
   }
 
   /**
-   * Load messages from a session
+   * Load messages from a conversation
    */
-  async loadMessages(sessionId: string): Promise<Message[]> {
-    const sessionState = await this.sessionService.getSession(sessionId);
-    const backendMessages = sessionState.messages || [];
+  async loadMessages(conversationId: string): Promise<Message[]> {
+    const conversationState = await this.conversationService.getConversation(conversationId);
+    const backendMessages = conversationState.messages || [];
 
     const transformed = this.transformMessages(backendMessages);
 
@@ -64,14 +64,14 @@ export class MessageService {
    * Send a message via agent.run
    */
   async sendMessage(
-    sessionId: string,
+    conversationId: string,
     agentId: string,
     message: string
   ): Promise<unknown> {
-    console.log(`[MessageService] Sending message to agent "${agentId}" in session "${sessionId}"`);
+    console.log(`[MessageService] Sending message to agent "${agentId}" in conversation "${conversationId}"`);
     
     const response = await this.client.request("agent.run", {
-      sessionId,
+      conversationId,
       agentId,
       message,
     });
@@ -83,7 +83,7 @@ export class MessageService {
         code: errorCode,
         message: errorMessage,
         agentId,
-        sessionId,
+        conversationId,
       });
       throw new Error(errorMessage);
     }
@@ -91,7 +91,7 @@ export class MessageService {
     if (!response.result) {
       console.error(`[MessageService] Agent run returned no result:`, {
         agentId,
-        sessionId,
+        conversationId,
         response,
       });
       throw new Error("Agent run returned no result");

@@ -6,32 +6,32 @@ import type {
   SandboxConfig,
   WorkspaceAccess,
 } from "../types.js";
-import type { SessionType } from "@server/agents/zuckerman/sessions/types.js";
+import type { ConversationType } from "@server/agents/zuckerman/conversations/types.js";
 
 /**
- * Resolve security context for a session
+ * Resolve security context for a conversation
  */
 export function resolveSecurityContext(
   config: SecurityConfig | undefined,
-  sessionId: string,
-  sessionType: SessionType,
+  conversationId: string,
+  conversationType: ConversationType,
   agentId: string,
 ): SecurityContext {
   const sandboxConfig = config?.sandbox ?? { mode: "off" };
-  const isSandboxed = shouldSandbox(sandboxConfig, sessionType);
+  const isSandboxed = shouldSandbox(sandboxConfig, conversationType);
 
   // Resolve tool policy
-  const toolPolicy = resolveToolPolicy(config, sessionType, isSandboxed);
+  const toolPolicy = resolveToolPolicy(config, conversationType, isSandboxed);
 
   // Resolve execution policy
-  const executionPolicy = resolveExecutionPolicy(config, sessionType);
+  const executionPolicy = resolveExecutionPolicy(config, conversationType);
 
   // Resolve workspace access
-  const workspaceAccess = resolveWorkspaceAccess(config, sessionType, isSandboxed);
+  const workspaceAccess = resolveWorkspaceAccess(config, conversationType, isSandboxed);
 
   return {
-    sessionId,
-    sessionType,
+    conversationId,
+    conversationType,
     agentId,
     isSandboxed,
     toolPolicy,
@@ -42,7 +42,7 @@ export function resolveSecurityContext(
 
 function shouldSandbox(
   sandboxConfig: SandboxConfig,
-  sessionType: SessionType,
+  conversationType: ConversationType,
 ): boolean {
   if (sandboxConfig.mode === "off" || sandboxConfig.enabled === false) {
     return false;
@@ -52,9 +52,9 @@ function shouldSandbox(
     return true;
   }
 
-  // "non-main" mode: sandbox non-main sessions
+  // "non-main" mode: sandbox non-main conversations
   if (sandboxConfig.mode === "non-main") {
-    return sessionType !== "main";
+    return conversationType !== "main";
   }
 
   return false;
@@ -62,7 +62,7 @@ function shouldSandbox(
 
 function resolveToolPolicy(
   config: SecurityConfig | undefined,
-  sessionType: SessionType,
+  conversationType: ConversationType,
   isSandboxed: boolean,
 ): ToolPolicy {
   // Start with global tool policy
@@ -72,32 +72,32 @@ function resolveToolPolicy(
     deny: config?.tools?.deny,
   };
 
-  // Apply session-specific overrides
-  const sessionConfig = config?.sessions?.[sessionType];
-  if (sessionConfig?.tools) {
-    const sessionPolicy: ToolPolicy = {
+  // Apply conversation-specific overrides
+  const conversationConfig = config?.conversations?.[conversationType];
+  if (conversationConfig?.tools) {
+    const conversationPolicy: ToolPolicy = {
       ...globalPolicy,
-      profile: sessionConfig.tools.profile ?? globalPolicy.profile,
-      allow: sessionConfig.tools.allow ?? globalPolicy.allow,
+      profile: conversationConfig.tools.profile ?? globalPolicy.profile,
+      allow: conversationConfig.tools.allow ?? globalPolicy.allow,
       deny: [
         ...(globalPolicy.deny ?? []),
-        ...(sessionConfig.tools.deny ?? []),
+        ...(conversationConfig.tools.deny ?? []),
       ],
     };
     
     // Apply sandbox-specific restrictions if sandboxed
     if (isSandboxed && config?.tools?.sandbox?.tools) {
       return {
-        ...sessionPolicy,
-        allow: config.tools.sandbox.tools.allow ?? sessionPolicy.allow,
+        ...conversationPolicy,
+        allow: config.tools.sandbox.tools.allow ?? conversationPolicy.allow,
         deny: [
-          ...(sessionPolicy.deny ?? []),
+          ...(conversationPolicy.deny ?? []),
           ...(config.tools.sandbox.tools.deny ?? []),
         ],
       };
     }
     
-    return sessionPolicy;
+    return conversationPolicy;
   }
 
   // Apply sandbox-specific restrictions if sandboxed
@@ -117,25 +117,25 @@ function resolveToolPolicy(
 
 function resolveExecutionPolicy(
   config: SecurityConfig | undefined,
-  sessionType: SessionType,
+  conversationType: ConversationType,
 ): ExecutionSecurity {
   const globalExecution = config?.execution ?? {};
-  const sessionExecution = config?.sessions?.[sessionType]?.execution ?? {};
+  const conversationExecution = config?.conversations?.[conversationType]?.execution ?? {};
 
   return {
-    allowlist: sessionExecution.allowlist ?? globalExecution.allowlist,
-    denylist: sessionExecution.denylist ?? globalExecution.denylist,
-    timeout: sessionExecution.timeout ?? globalExecution.timeout ?? 30000,
-    maxOutput: sessionExecution.maxOutput ?? globalExecution.maxOutput ?? 10485760, // 10MB
-    maxProcesses: sessionExecution.maxProcesses ?? globalExecution.maxProcesses,
-    allowedPaths: sessionExecution.allowedPaths ?? globalExecution.allowedPaths,
-    blockedPaths: sessionExecution.blockedPaths ?? globalExecution.blockedPaths,
+    allowlist: conversationExecution.allowlist ?? globalExecution.allowlist,
+    denylist: conversationExecution.denylist ?? globalExecution.denylist,
+    timeout: conversationExecution.timeout ?? globalExecution.timeout ?? 30000,
+    maxOutput: conversationExecution.maxOutput ?? globalExecution.maxOutput ?? 10485760, // 10MB
+    maxProcesses: conversationExecution.maxProcesses ?? globalExecution.maxProcesses,
+    allowedPaths: conversationExecution.allowedPaths ?? globalExecution.allowedPaths,
+    blockedPaths: conversationExecution.blockedPaths ?? globalExecution.blockedPaths,
   };
 }
 
 function resolveWorkspaceAccess(
   config: SecurityConfig | undefined,
-  sessionType: SessionType,
+  conversationType: ConversationType,
   isSandboxed: boolean,
 ): WorkspaceAccess {
   if (!isSandboxed) {
@@ -143,10 +143,10 @@ function resolveWorkspaceAccess(
   }
 
   const sandboxConfig = config?.sandbox;
-  const sessionConfig = config?.sessions?.[sessionType];
+  const conversationConfig = config?.conversations?.[conversationType];
 
-  // Session-specific override
-  if (sessionConfig?.sandbox === false) {
+  // Conversation-specific override
+  if (conversationConfig?.sandbox === false) {
     return "rw";
   }
 

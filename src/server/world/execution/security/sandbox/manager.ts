@@ -43,7 +43,7 @@ function computeConfigHash(params: {
  */
 function resolveScopeKey(
   scope: SandboxScope,
-  sessionId: string,
+  conversationId: string,
   agentId: string,
 ): string {
   if (scope === "shared") {
@@ -52,7 +52,7 @@ function resolveScopeKey(
   if (scope === "per-agent") {
     return agentId;
   }
-  return sessionId; // per-session
+  return conversationId; // per-conversation
 }
 
 /**
@@ -74,7 +74,7 @@ function generateContainerName(
  * Ensure sandbox container exists and is running
  */
 export async function ensureSandboxContainer(params: {
-  sessionId: string;
+  conversationId?: string;
   agentId: string;
   workspaceDir: string;
   agentWorkspaceDir?: string;
@@ -87,8 +87,9 @@ export async function ensureSandboxContainer(params: {
     return null;
   }
 
-  const scope = params.config.scope ?? "per-session";
-  const scopeKey = resolveScopeKey(scope, params.sessionId, params.agentId);
+  const conversationId = params.conversationId || "";
+  const scope = params.config.scope ?? "per-conversation";
+  const scopeKey = resolveScopeKey(scope, conversationId, params.agentId);
   const workspaceAccess = params.config.workspaceAccess ?? "rw";
   const prefix = params.config.docker?.containerPrefix ?? DEFAULT_CONTAINER_PREFIX;
   const containerName = generateContainerName(prefix, scopeKey);

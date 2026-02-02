@@ -3,8 +3,8 @@ import { getCronExecutionContext } from "./execution-context.js";
 import { resolveAgentLandDir } from "@server/world/land/resolver.js";
 import { loadConfig } from "@server/world/config/index.js";
 import { resolveSecurityContext } from "@server/world/execution/security/context/index.js";
-import { deriveSessionKey } from "@server/agents/zuckerman/sessions/index.js";
-import { loadSessionStore, resolveSessionStorePath } from "@server/agents/zuckerman/sessions/store.js";
+import { deriveConversationKey } from "@server/agents/zuckerman/conversations/index.js";
+import { loadConversationStore, resolveConversationStorePath } from "@server/agents/zuckerman/conversations/store.js";
 import { activityRecorder } from "@server/world/activity/index.js";
 import { saveEvents } from "./storage.js";
 import { scheduleEvent, calculateNextOccurrence } from "./scheduler.js";
@@ -84,39 +84,39 @@ async function executeAgentTurn(event: CalendarEvent, eventsMap: Map<string, Cal
     return;
   }
 
-  // Get session manager
-  const sessionManager = agentFactory.getSessionManager(agentId);
+  // Get conversation manager
+  const conversationManager = agentFactory.getConversationManager(agentId);
 
-  // Create or get session
-  let sessionId: string;
-  let isNewSession = false;
+  // Create or get conversation
+  let conversationId: string;
+  let isNewConversation = false;
   
-  const sessionTarget = action.sessionTarget || "isolated";
-  if (sessionTarget === "isolated") {
-    // Create temporary isolated session
-    const session = sessionManager.createSession(`cron-${event.id}`, "main", agentId);
-    sessionId = session.id;
-    isNewSession = true;
+  const conversationTarget = action.conversationTarget || "isolated";
+  if (conversationTarget === "isolated") {
+    // Create temporary isolated conversation
+    const conversation = conversationManager.createConversation(`cron-${event.id}`, "main", agentId);
+    conversationId = conversation.id;
+    isNewConversation = true;
   } else {
-    // Use main session - get or create
-    const sessionKey = deriveSessionKey(agentId, "main");
-    const storePath = resolveSessionStorePath(agentId);
-    const store = loadSessionStore(storePath);
-    const sessionEntry = store[sessionKey];
+    // Use main conversation - get or create
+    const conversationKey = deriveConversationKey(agentId, "main");
+    const storePath = resolveConversationStorePath(agentId);
+    const store = loadConversationStore(storePath);
+    const conversationEntry = store[conversationKey];
     
-    if (sessionEntry) {
-      sessionId = sessionEntry.sessionId;
+    if (conversationEntry) {
+      conversationId = conversationEntry.conversationId;
     } else {
-      const session = sessionManager.createSession("main", "main", agentId);
-      sessionId = session.id;
-      isNewSession = true;
+      const conversation = conversationManager.createConversation("main", "main", agentId);
+      conversationId = conversation.id;
+      isNewConversation = true;
     }
   }
 
-  // Get session state
-  const session = sessionManager.getSession(sessionId);
-  if (!session) {
-    console.error(`[Calendar] Failed to get session ${sessionId}`);
+  // Get conversation state
+  const conversation = conversationManager.getConversation(conversationId);
+  if (!conversation) {
+    console.error(`[Calendar] Failed to get conversation ${conversationId}`);
     return;
   }
 
@@ -125,16 +125,17 @@ async function executeAgentTurn(event: CalendarEvent, eventsMap: Map<string, Cal
   const landDir = resolveAgentLandDir(config, agentId);
   const securityContext = await resolveSecurityContext(
     config.security,
-    sessionId,
-    session.session.type,
+    conversationId,
+    conversation.conversation.type,
     agentId,
     landDir,
   );
 
   // Run agent
-  console.log(`[Calendar] Running agent turn for event ${event.id} in session ${sessionId}`);
-  if (action.sessionIdSource) {
-    console.log(`[Calendar] Event created by session: ${action.sessionIdSource}`);
+  console.log(`[Calendar] Running agent turn for event ${event.id} in conversation ${conversationId}`);
+  const conversationIdSource = action.conversationIdSource;
+  if (conversationIdSource) {
+    console.log(`[Calendar] Event created by conversation: ${conversationIdSource}`);
   }
   console.log(`[Calendar] Action message: "${action.actionMessage}"`);
   if (action.contextMessage) {
@@ -147,7 +148,7 @@ async function executeAgentTurn(event: CalendarEvent, eventsMap: Map<string, Cal
     : action.actionMessage;
   
   const runParams: any = {
-    sessionId,
+    conversationId,
     message,
     securityContext,
   };
@@ -182,19 +183,19 @@ async function executeAgentTurn(event: CalendarEvent, eventsMap: Map<string, Cal
   console.log(`[Calendar] Agent response for event ${event.id} (${result.response?.length || 0} chars):`, responsePreview);
   
   // Note: toolsUsed is not currently returned by runtime, but tools are executed during the run
-  // Check session messages to see if tools were called
-  const sessionAfter = sessionManager.getSession(sessionId);
-  const toolMessages = sessionAfter?.messages.filter(m => m.role === "tool") || [];
+  // Check conversation messages to see if tools were called
+  const conversationAfter = conversationManager.getConversation(conversationId);
+  const toolMessages = conversationAfter?.messages.filter(m => m.role === "tool") || [];
   if (toolMessages.length > 0) {
     console.log(`[Calendar] Agent executed ${toolMessages.length} tool call(s) for event ${event.id}`);
   } else {
     console.log(`[Calendar] Agent did not execute any tools for event ${event.id} - response was: "${responsePreview}"`);
   }
 
-  // Add response to session
-  sessionManager.addMessage(sessionId, "assistant", result.response);
+  // Add response to conversation
+  conversationManager.addMessage(conversationId, "assistant", result.response);
 
   // Note: Agent uses its tools (like telegram) to send messages
-  // Channel metadata is already set on the session, so tools can access it
+  // Channel metadata is already set on the conversation, so tools can access it
   // No need for separate delivery logic - the agent handles it
 }
