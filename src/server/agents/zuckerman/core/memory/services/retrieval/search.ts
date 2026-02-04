@@ -4,11 +4,11 @@
  */
 
 import { DatabaseSync } from "node:sqlite";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ResolvedMemorySearchConfig } from "../../config.js";
 import { parseEmbedding, cosineSimilarity } from "../encoding/embeddings.js";
-import { ensureMemoryIndexSchema } from "../encoding/schema.js";
+import { getDatabase, initializeDatabase } from "../storage/db.js";
 import { createEmbeddingProvider, type EmbeddingProvider } from "@server/world/providers/embeddings/index.js";
 import { MemoryIndexerImpl } from "../indexing/index.js";
 
@@ -77,53 +77,34 @@ class MemorySearchManagerImpl implements MemorySearchManager {
 
   /**
    * Initialize the database connection and schema.
-   * This is called once when the manager is created via getMemorySearchManager().
-   * The database is shared across all memory operations for this manager instance.
+   * Gets database from registry if available, otherwise initializes it.
+   * The database is shared across all memory operations for this agent/workspace combination.
    */
-  async initialize(): Promise<void> {
+  async initialize(agentId: string): Promise<void> {
     if (this.db) return;
 
-    const dbPath = this.config.store.path;
-    const dbDir = dirname(dbPath);
+    let result = getDatabase(this.workspaceDir, agentId);
     
-    try {
-      if (!existsSync(dbDir)) {
-        mkdirSync(dbDir, { recursive: true });
-      }
-
-      this.db = new DatabaseSync(dbPath);
-      
-      // Enable FTS5 if available
-      const ftsEnabled = this.config.store.vector.enabled;
-      const { ftsAvailable, ftsError } = ensureMemoryIndexSchema({
-        db: this.db,
-        embeddingCacheTable: this.embeddingCacheTable,
-        ftsTable: this.ftsTable,
-        ftsEnabled,
-      });
-
-      if (!ftsAvailable && ftsEnabled) {
-        console.warn(`FTS5 not available: ${ftsError || "unknown error"}, falling back to vector-only search`);
-      }
-
-      // Verify database is working by running a simple query
-      this.db.prepare("SELECT 1").get();
-      
-      // Create indexer instance for syncing files to database
-      this.indexer = new MemoryIndexerImpl(
-        this.db,
+    if (!result) {
+      result = initializeDatabase(
         this.config,
         this.workspaceDir,
-        this.embeddingProvider,
+        agentId,
+        this.embeddingCacheTable,
         this.ftsTable
       );
-      
-      console.log(`[Memory] Database initialized at ${dbPath}${ftsEnabled && ftsAvailable ? " (FTS5 enabled)" : ""}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`[Memory] Failed to initialize database at ${dbPath}:`, message);
-      throw new Error(`Database initialization failed: ${message}`);
     }
+    
+    this.db = result.db;
+    
+    // Create indexer instance for syncing files to database
+    this.indexer = new MemoryIndexerImpl(
+      this.db,
+      this.config,
+      this.workspaceDir,
+      this.embeddingProvider,
+      this.ftsTable
+    );
   }
 
   async search(
@@ -494,7 +475,8 @@ export async function getMemorySearchManager(params: {
   try {
     const manager = new MemorySearchManagerImpl(config, workspaceDir);
     // Initialize database once at creation time - it will be shared across all operations
-    await manager.initialize();
+    // Database is initialized by UnifiedMemoryManager, but we ensure it's ready here
+    await manager.initialize(agentId);
 
     // Auto-sync on creation if configured
     if (config.sync.onConversationStart) {

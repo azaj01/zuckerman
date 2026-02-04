@@ -30,6 +30,7 @@ export class ZuckermanAwareness implements AgentRuntime {
   private providerService: LLMProviderService;
   private conversationManager: ConversationManager;
   private toolRegistry: ZuckermanToolRegistry;
+  private dbInitialized: boolean = false;
   
   // Load prompts from agent's core directory (where markdown files are)
   private readonly agentDir: string;
@@ -49,6 +50,38 @@ export class ZuckermanAwareness implements AgentRuntime {
     this.agentDir = metadata.agentDir;
   }
 
+  /**
+   * Initialize the agent - called once when agent is created
+   */
+  async initialize(): Promise<void> {
+    try {
+      const config = await loadConfig();
+      const homedirDir = resolveAgentHomedirDir(config, this.agentId);
+      
+      // Initialize database for vector search if memory search is enabled
+      const memorySearchConfig = config.agent?.memorySearch;
+      if (memorySearchConfig) {
+        const { resolveMemorySearchConfig } = await import("@server/agents/zuckerman/core/memory/config.js");
+        const { getDatabase, initializeDatabase } = await import("@server/agents/zuckerman/core/memory/services/storage/db.js");
+        const resolvedConfig = resolveMemorySearchConfig(memorySearchConfig, homedirDir, this.agentId);
+        if (resolvedConfig) {
+          // Check if already initialized, otherwise initialize
+          const dbResult = getDatabase(homedirDir, this.agentId);
+          if (!dbResult) {
+            const embeddingCacheTable = "embedding_cache";
+            const ftsTable = "fts_memory";
+            initializeDatabase(resolvedConfig, homedirDir, this.agentId, embeddingCacheTable, ftsTable);
+          }
+          this.dbInitialized = true;
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[ZuckermanRuntime] Initialization failed:`, message);
+      // Continue without database - memory search will be disabled
+    }
+  }
+
   async loadPrompts(): Promise<LoadedPrompts> {
     return this.promptLoader.loadPrompts(this.agentDir);
   }
@@ -60,8 +93,10 @@ export class ZuckermanAwareness implements AgentRuntime {
     const basePrompt = this.promptLoader.buildSystemPrompt(prompts);
     const parts: string[] = [basePrompt];
     
-    // Add memory (only for main conversations - will be filtered in run method)
+    // Reload and add memory on every call to ensure we have the latest semantic memory
+    // This ensures any semantic memories added during message processing are included
     if (homedirDir) {
+      // Always reload from files to get the latest semantic memory updates
       const { dailyLogs, longTermMemory } = loadMemoryForConversation(homedirDir);
       if (dailyLogs.size > 0 || longTermMemory) {
         const memorySection = formatMemoryForPrompt(dailyLogs, longTermMemory);
@@ -133,7 +168,8 @@ export class ZuckermanAwareness implements AgentRuntime {
       // Load prompts
       const prompts = await this.loadPrompts();
       
-      // Build system prompt (passing homedirDir to include memory)
+      // Build system prompt - this will reload semantic memory from MEMORY.md on every message
+      // ensuring we always have the latest semantic memories
       const systemPrompt = await this.buildSystemPrompt(prompts, homedirDir);
 
       // Prepare messages
@@ -157,9 +193,13 @@ export class ZuckermanAwareness implements AgentRuntime {
       messages.push({ role: "user", content: message });
 
       // Process new message for memory extraction (real-time)
+      // This may add new semantic memories to MEMORY.md
+      // Note: Semantic memory is reloaded on every message in buildSystemPrompt(),
+      // so new memories added here will be available on the next message
       try {
         const storageDir = resolveMemoryDir(homedirDir);
         const memoryManager = new UnifiedMemoryManager(storageDir, homedirDir, provider);
+        
         const conversationContext = conversation 
           ? conversation.messages.slice(-3).map(m => m.content).join("\n")
           : undefined;

@@ -20,7 +20,6 @@ export function consolidateMemories(
     content: conversationSummary,
     type: "event",
     importance: 0.7,
-    shouldSaveToLongTerm: false, // Daily log only
   });
   
   // Process important messages
@@ -37,17 +36,11 @@ export function consolidateMemories(
       // Only include if importance is above threshold
       if (importance > 0.4) {
         const type = categorizeMemory(msg.content);
-        const shouldSaveToLongTerm = importance > 0.7 && (
-          type === "preference" || 
-          type === "fact" || 
-          type === "learning"
-        );
         
         memories.push({
           content: msg.content,
           type,
           importance,
-          shouldSaveToLongTerm,
         });
       }
     }
@@ -61,9 +54,7 @@ export function consolidateMemories(
  * Format memories for daily log
  */
 export function formatMemoriesForDailyLog(memories: ConsolidatedMemory[]): string {
-  const dailyMemories = memories.filter(m => !m.shouldSaveToLongTerm);
-  
-  if (dailyMemories.length === 0) {
+  if (memories.length === 0) {
     return "";
   }
   
@@ -78,7 +69,7 @@ export function formatMemoriesForDailyLog(memories: ConsolidatedMemory[]): strin
     learning: [],
   };
   
-  for (const memory of dailyMemories) {
+  for (const memory of memories) {
     byType[memory.type].push(memory);
   }
   
@@ -99,9 +90,7 @@ export function formatMemoriesForDailyLog(memories: ConsolidatedMemory[]): strin
  * Format memories for long-term storage
  */
 export function formatMemoriesForLongTerm(memories: ConsolidatedMemory[]): string {
-  const longTermMemories = memories.filter(m => m.shouldSaveToLongTerm);
-  
-  if (longTermMemories.length === 0) {
+  if (memories.length === 0) {
     return "";
   }
   
@@ -116,7 +105,7 @@ export function formatMemoriesForLongTerm(memories: ConsolidatedMemory[]): strin
     learning: [],
   };
   
-  for (const memory of longTermMemories) {
+  for (const memory of memories) {
     byType[memory.type].push(memory);
   }
   

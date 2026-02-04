@@ -51,6 +51,11 @@ export interface AgentRuntime {
   readonly agentId: string;
 
   /**
+   * Initialize the agent (called once when agent is created)
+   */
+  initialize?(): Promise<void>;
+
+  /**
    * Run the agent with given parameters
    */
   run(params: AgentRunParams): Promise<AgentRunResult>;

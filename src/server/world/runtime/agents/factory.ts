@@ -129,7 +129,14 @@ export class AgentRuntimeFactory {
       }
 
       const conversationManager = this.getConversationManager(agentId);
-      return new RuntimeClass(conversationManager);
+      const runtime = new RuntimeClass(conversationManager);
+      
+      // Initialize the runtime if it has an initialize method
+      if (runtime.initialize) {
+        await runtime.initialize();
+      }
+      
+      return runtime;
     } catch (err) {
       const errorDetails = err instanceof Error ? err.message : String(err);
       const stack = err instanceof Error ? err.stack : undefined;

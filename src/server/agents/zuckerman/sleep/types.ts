@@ -37,5 +37,4 @@ export interface ConsolidatedMemory {
   content: string;
   type: "fact" | "preference" | "decision" | "event" | "learning";
   importance: number; // 0-1
-  shouldSaveToLongTerm: boolean;
 }
