@@ -11,6 +11,7 @@ import { createSignalTool } from "./channels/signal.js";
 import { createMemorySearchTool, createMemoryGetTool } from "./memory/index.js";
 import { createTextToSpeechTool } from "./voice/texttospeech/tool.js";
 import { createSpeechToTextTool } from "./voice/speechtotext/tool.js";
+import { createMouseTool } from "./mouse/index.js";
 
 export class ZuckermanToolRegistry {
   private tools = new Map<string, Tool>();
@@ -32,6 +33,7 @@ export class ZuckermanToolRegistry {
     this.register(createMemoryGetTool());
     this.register(createTextToSpeechTool());
     this.register(createSpeechToTextTool());
+    this.register(createMouseTool());
     
     // Register batch tool with execution context
     this.registerBatchTool();
