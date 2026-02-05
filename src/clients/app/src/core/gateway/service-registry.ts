@@ -7,6 +7,7 @@ import { ConversationService } from "../conversations/conversation-service";
 import { MessageService } from "../messages/message-service";
 import { AgentService } from "../agents/agent-service";
 import { HealthService } from "../health/health-service";
+import { StreamingService } from "../streaming/streaming-service";
 
 /**
  * Service container - holds all services for a single gateway client
@@ -23,6 +24,7 @@ export interface ServiceContainer {
   messageService: MessageService;
   agentService: AgentService;
   healthService: HealthService;
+  streamingService: StreamingService;
 }
 
 /**
@@ -77,6 +79,7 @@ export class ServiceRegistry {
     const conversationService = new ConversationService(client);
     const agentService = new AgentService(client);
     const healthService = new HealthService(client);
+    const streamingService = new StreamingService(client);
 
     // Create MessageService with ConversationService dependency injection
     const messageService = new MessageService(client, conversationService);
@@ -96,6 +99,7 @@ export class ServiceRegistry {
       messageService,
       agentService,
       healthService,
+      streamingService,
     };
   }
 

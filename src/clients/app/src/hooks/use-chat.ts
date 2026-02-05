@@ -66,9 +66,17 @@ export function useChat(
   const currentConversationIdRef = useRef<string | null>(currentConversationId);
   const streamingMessageRef = useRef<{ runId: string; content: string } | null>(null);
 
-  // Update refs when conversationId changes
+  // Update refs when conversationId changes - do this synchronously
   useEffect(() => {
+    const previousConversationId = currentConversationIdRef.current;
     currentConversationIdRef.current = currentConversationId;
+    
+    // If conversation changed, clear streaming state and messages
+    if (previousConversationId !== currentConversationId) {
+      streamingMessageRef.current = null;
+      // Clear messages immediately when switching conversations
+      setMessages([]);
+    }
   }, [currentConversationId]);
 
   // Sync currentConversationId with active conversations
@@ -160,11 +168,62 @@ export function useChat(
       return;
     }
 
+    // Store the conversation ID we're loading for
+    const loadingConversationId = currentConversation;
+
     try {
-      const loadedMessages = await messageService.loadMessages(currentConversation);
+      const loadedMessages = await messageService.loadMessages(loadingConversationId);
       const deduplicated = messageService.deduplicateMessages(loadedMessages);
 
+      // Verify we're still on the same conversation before updating
+      if (currentConversationIdRef.current !== loadingConversationId) {
+        return; // Conversation changed, don't update messages
+      }
+
       setMessages((prev) => {
+        // Double-check conversation hasn't changed
+        if (currentConversationIdRef.current !== loadingConversationId) {
+          return prev;
+        }
+
+        // If we have no previous messages (e.g., just switched conversations), always load
+        if (prev.length === 0) {
+          lastMessageCountRef.current = deduplicated.length;
+          return deduplicated;
+        }
+
+        // If we have a streaming message in progress, merge it with loaded messages
+        const hasStreamingMessage = prev.some((msg) => (msg as any).streamingRunId);
+        if (hasStreamingMessage) {
+          // Find the streaming message in prev
+          const streamingMsg = prev.find((msg) => (msg as any).streamingRunId);
+          if (streamingMsg) {
+            // Check if this streaming message exists in loaded messages
+            const streamingRunId = (streamingMsg as any).streamingRunId;
+            const loadedStreamingIndex = deduplicated.findIndex(
+              (msg) => (msg as any).streamingRunId === streamingRunId
+            );
+            
+            if (loadedStreamingIndex === -1) {
+              // Streaming message not in loaded messages, append it
+              const merged = [...deduplicated, streamingMsg];
+              lastMessageCountRef.current = merged.length;
+              return merged;
+            } else {
+              // Streaming message exists in loaded, but might be outdated
+              // Keep the streaming version if it has more content
+              const loadedStreaming = deduplicated[loadedStreamingIndex];
+              if (streamingMsg.content && streamingMsg.content.length > (loadedStreaming.content?.length || 0)) {
+                const merged = [...deduplicated];
+                merged[loadedStreamingIndex] = streamingMsg;
+                lastMessageCountRef.current = merged.length;
+                return merged;
+              }
+            }
+          }
+        }
+
+        // Standard comparison logic
         if (deduplicated.length !== prev.length) {
           lastMessageCountRef.current = deduplicated.length;
           return deduplicated;
@@ -191,6 +250,11 @@ export function useChat(
         lastMessageCountRef.current = deduplicated.length;
       }
     } catch (error) {
+      // Only handle error if still on same conversation
+      if (currentConversationIdRef.current !== loadingConversationId) {
+        return;
+      }
+
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isConversationNotFound =
         errorMessage.includes("not found") || errorMessage.includes("Conversation");
@@ -243,14 +307,13 @@ export function useChat(
     }, 5000);
   }, [connectionStatus, conversationService, loadMessages, isSending, stopPolling]);
 
+  // Load messages when conversation changes
+  // Note: Messages are already cleared in the ref update effect above
   useEffect(() => {
-    if (!isSending && currentConversationId) {
-      setMessages([]);
+    if (currentConversationId) {
       loadMessages();
-    } else if (!currentConversationId) {
-      setMessages([]);
     }
-  }, [currentConversationId, loadMessages, isSending]);
+  }, [currentConversationId, loadMessages]);
 
   // Streaming event listener
   useEffect(() => {
@@ -509,7 +572,6 @@ export function useChat(
         });
       } else if (eventType === "done") {
         streamingMessageRef.current = null;
-        setIsSending(false);
         loadMessages();
       }
     };
@@ -588,6 +650,10 @@ export function useChat(
 
         console.log(`[useChat] Sending message with agentId: "${agentId}", conversationId: "${conversationId}"`);
         await messageService.sendMessage(conversationId, agentId, messageText);
+        
+        // Allow sending new messages immediately after message is sent
+        // Streaming will be handled by the event listener
+        setIsSending(false);
 
         let attempts = 0;
         const pollInterval = 300;
@@ -598,6 +664,13 @@ export function useChat(
               attempts++;
 
               try {
+                // Check if conversation changed - if so, stop polling
+                if (currentConversationIdRef.current !== conversationId) {
+                  clearInterval(interval);
+                  resolve();
+                  return;
+                }
+
                 if (connectionStatus !== "connected") {
                   return;
                 }
@@ -612,12 +685,12 @@ export function useChat(
                 });
 
                 if (hasResponse) {
-                  setMessages(deduplicated);
-                  lastMessageCountRef.current = deduplicated.length;
+                  // Double-check conversation hasn't changed before updating
+                  if (currentConversationIdRef.current === conversationId) {
+                    setMessages(deduplicated);
+                    lastMessageCountRef.current = deduplicated.length;
+                  }
                   clearInterval(interval);
-                  requestAnimationFrame(() => {
-                    setIsSending(false);
-                  });
                   resolve();
                 }
               } catch (error) {
@@ -627,8 +700,10 @@ export function useChat(
 
                 if (isConversationNotFound) {
                   clearInterval(interval);
-                  setIsSending(false);
-                  setMessages((prev) => prev.filter((msg) => msg.role !== "thinking"));
+                  // Only clear thinking indicator if still on same conversation
+                  if (currentConversationIdRef.current === conversationId) {
+                    setMessages((prev) => prev.filter((msg) => msg.role !== "thinking"));
+                  }
                   resolve();
                 }
               }

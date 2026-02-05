@@ -71,6 +71,14 @@ export function useSignalService() {
   );
 }
 
+export function useStreamingService() {
+  const { gatewayClient, serviceRegistry } = useGatewayContext();
+  return useMemo(
+    () => serviceRegistry.getService(gatewayClient, "streamingService"),
+    [gatewayClient, serviceRegistry]
+  );
+}
+
 /**
  * Get all services at once (useful when you need multiple services)
  */

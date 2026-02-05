@@ -80,7 +80,7 @@ export function ChatView({ state, onAction }: ChatViewProps) {
   }, [messages, isSending]);
 
   const handleSend = async () => {
-    if (!input.trim() || isSending) return;
+    if (!input.trim()) return;
     const messageText = input;
     setInput("");
 
@@ -258,8 +258,7 @@ export function ChatView({ state, onAction }: ChatViewProps) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={isSending ? "Sending..." : "Message..."}
-              disabled={isSending}
+              placeholder="Message..."
               className="flex-1 min-h-[36px] max-h-[120px] resize-none text-sm bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 px-3 py-2 pr-20"
               style={{
                 height: "auto",
@@ -273,11 +272,11 @@ export function ChatView({ state, onAction }: ChatViewProps) {
             </div>
             <Button
               onClick={handleSend}
-              disabled={!input.trim() || isSending}
+              disabled={!input.trim()}
               variant="ghost"
               size="sm"
               className="h-8 w-8 p-0 mr-1 text-foreground/70 hover:text-foreground hover:bg-transparent disabled:opacity-30 shrink-0 rounded-md"
-              title={isSending ? "Sending..." : "Send message"}
+              title="Send message"
             >
               <Send className="h-4 w-4" />
             </Button>

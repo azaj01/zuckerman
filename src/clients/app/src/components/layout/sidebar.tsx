@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useLocation } from "react-router-dom";
-import { Plus, MessageSquare, Users, Hash, Settings, Search, Bot, RotateCcw, Archive, Calendar, ChevronDown } from "lucide-react";
+import { Plus, MessageSquare, Users, Hash, Settings, Search, Bot, RotateCcw, Archive, Calendar, ChevronDown, Loader2 } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { AppState } from "../types/app-state";
+import { useStreamingConversations } from "../../core/streaming/use-streaming";
 
 interface SidebarProps {
   state: AppState;
@@ -28,12 +29,14 @@ interface SidebarProps {
 function ConversationItem({ 
   conversation, 
   isActive, 
+  isStreaming,
   onSelect, 
   onRestore,
   onArchive
 }: { 
   conversation: AppState["conversations"][0]; 
-  isActive: boolean; 
+  isActive: boolean;
+  isStreaming: boolean;
   onSelect: () => void;
   onRestore?: () => void;
   onArchive?: () => void;
@@ -59,7 +62,10 @@ function ConversationItem({
         tooltip={conversation.label || conversation.id}
       >
         {getIcon()}
-        <span>{conversation.label || conversation.id}</span>
+        <span className="flex-1 min-w-0 truncate">{conversation.label || conversation.id}</span>
+        {isStreaming && (
+          <Loader2 className="ml-auto h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+        )}
       </SidebarMenuButton>
       {(onRestore || onArchive) && (
         <div
@@ -97,6 +103,7 @@ function ConversationItem({
 export function AppSidebar({ state, activeConversationIds, onAction }: SidebarProps) {
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
+  const streamingConversations = useStreamingConversations();
   
   // Determine current page type
   const currentPage = location.pathname.startsWith("/agent/") 
@@ -230,6 +237,7 @@ export function AppSidebar({ state, activeConversationIds, onAction }: SidebarPr
                     key={conversation.id}
                     conversation={conversation}
                     isActive={currentPage === "home" && conversation.id === state.currentConversationId}
+                    isStreaming={streamingConversations.has(conversation.id)}
                     onSelect={() => onAction("select-conversation", { conversationId: conversation.id })}
                     onArchive={() => onAction("archive-conversation", { conversationId: conversation.id })}
                   />
@@ -266,6 +274,7 @@ export function AppSidebar({ state, activeConversationIds, onAction }: SidebarPr
                         key={conversation.id}
                         conversation={conversation}
                         isActive={false}
+                        isStreaming={streamingConversations.has(conversation.id)}
                         onSelect={() => {
                           // Don't immediately select archived conversations - require restore button
                         }}
