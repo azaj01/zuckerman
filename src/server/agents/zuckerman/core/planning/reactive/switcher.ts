@@ -3,9 +3,9 @@
  * Handles task switching logic with LLM-based continuity assessment
  */
 
-import type { Task, TaskUrgency } from "../types.js";
+import type { GoalTaskNode } from "../types.js";
 import type { FocusState } from "../../attention/types.js";
-import { FocusContinuityAnalyzer, type ContinuityAssessment } from "./continuity.js";
+import { SwitchingAgent, type SwitchingDecision } from "./agent.js";
 
 /**
  * Task context for resumption
@@ -22,80 +22,32 @@ export interface TaskContext {
 export class TaskSwitcher {
   private savedContexts: Map<string, TaskContext> = new Map();
   private switchHistory: Array<{ from: string; to: string; timestamp: number }> = [];
-  private continuityAnalyzer: FocusContinuityAnalyzer;
+  private agent: SwitchingAgent;
 
   constructor() {
-    this.continuityAnalyzer = new FocusContinuityAnalyzer();
+    this.agent = new SwitchingAgent();
   }
 
   /**
    * Determine if should switch from current task to new task (LLM-based)
    */
   async shouldSwitchWithLLM(
-    currentTask: Task | null,
-    newTask: Task,
+    currentTask: GoalTaskNode | null,
+    newTask: GoalTaskNode,
     currentFocus: FocusState | null
-  ): Promise<ContinuityAssessment> {
-    return await this.continuityAnalyzer.assessContinuity(
-      currentFocus,
-      currentTask,
-      newTask
-    );
-  }
-
-  /**
-   * Determine if should switch from current task to new task (legacy rule-based, kept for fallback)
-   */
-  shouldSwitch(currentTask: Task | null, newTask: Task): boolean {
-    // No current task - can switch
-    if (!currentTask) {
-      return true;
-    }
-
-    // Same task - don't switch
-    if (currentTask.id === newTask.id) {
-      return false;
-    }
-
-    // Critical tasks always interrupt
-    if (newTask.urgency === "critical") {
-      return true;
-    }
-
-    // Higher urgency can interrupt lower urgency
-    const currentUrgencyLevel = this.getUrgencyLevel(currentTask.urgency);
-    const newUrgencyLevel = this.getUrgencyLevel(newTask.urgency);
-
-    if (newUrgencyLevel > currentUrgencyLevel) {
-      return true;
-    }
-
-    // Can't interrupt if new task has same or lower urgency
-    return false;
-  }
-
-  /**
-   * Get urgency level as number for comparison (legacy, kept for fallback)
-   */
-  private getUrgencyLevel(urgency: TaskUrgency): number {
-    const levels: Record<TaskUrgency, number> = {
-      low: 1,
-      medium: 2,
-      high: 3,
-      critical: 4,
-    };
-    return levels[urgency];
+  ): Promise<SwitchingDecision> {
+    return await this.agent.decideSwitch(currentTask, newTask, currentFocus);
   }
 
   /**
    * Perform task switch
    */
-  switchTask(fromTask: Task | null, toTask: Task): void {
+  switchTask(fromTask: GoalTaskNode | null, toTask: GoalTaskNode): void {
     // Save context of current task if exists
-    if (fromTask) {
+    if (fromTask && fromTask.type === "task") {
       this.saveTaskContext(fromTask.id, {
         progress: fromTask.progress || 0,
-        status: fromTask.status,
+        status: fromTask.taskStatus || "pending",
         metadata: fromTask.metadata || {},
       });
     }

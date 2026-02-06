@@ -8,7 +8,6 @@ import { createWhatsAppTool } from "./channels/whatsapp.js";
 import { createTelegramTool } from "./channels/telegram.js";
 import { createDiscordTool } from "./channels/discord.js";
 import { createSignalTool } from "./channels/signal.js";
-import { createMemorySearchTool, createMemoryGetTool } from "./memory/index.js";
 import { createTextToSpeechTool } from "./voice/texttospeech/tool.js";
 import { createSpeechToTextTool } from "./voice/speechtotext/tool.js";
 import { createMouseTool } from "./mouse/index.js";
@@ -29,8 +28,6 @@ export class ZuckermanToolRegistry {
     this.register(createTelegramTool());
     this.register(createDiscordTool());
     this.register(createSignalTool());
-    this.register(createMemorySearchTool());
-    this.register(createMemoryGetTool());
     this.register(createTextToSpeechTool());
     this.register(createSpeechToTextTool());
     this.register(createMouseTool());

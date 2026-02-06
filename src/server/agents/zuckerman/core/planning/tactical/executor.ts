@@ -3,31 +3,38 @@
  * Tracks task execution with step sequences
  */
 
-import type { Task } from "../types.js";
+import type { GoalTaskNode } from "../types.js";
 import { StepSequenceManager } from "./steps.js";
+import { TacticalAgent } from "./agent.js";
 import type { TaskStep } from "./steps.js";
 
 /**
  * Task Executor
  */
 export class TacticalExecutor {
-  private currentTask: Task | null = null;
+  private currentTask: GoalTaskNode | null = null;
   private startTime: number | null = null;
   private steps: TaskStep[] = [];
   private stepManager: StepSequenceManager;
+  private agent: TacticalAgent;
   private readonly timeoutMs: number = 60 * 60 * 1000; // 1 hour default timeout
 
   constructor() {
     this.stepManager = new StepSequenceManager();
+    this.agent = new TacticalAgent();
   }
 
   /**
    * Start executing a task
    */
-  startExecution(task: Task): void {
+  startExecution(task: GoalTaskNode): void {
+    if (task.type !== "task") {
+      throw new Error("Can only execute tasks, not goals");
+    }
+    
     this.currentTask = task;
     this.startTime = Date.now();
-    task.status = "active";
+    task.taskStatus = "active";
     task.progress = 0;
     task.updatedAt = Date.now();
 
@@ -55,8 +62,8 @@ export class TacticalExecutor {
   /**
    * Update task progress
    */
-  updateProgress(task: Task, progress: number): void {
-    if (task.id !== this.currentTask?.id) {
+  updateProgress(task: GoalTaskNode, progress: number): void {
+    if (task.id !== this.currentTask?.id || task.type !== "task") {
       return;
     }
 
@@ -89,12 +96,12 @@ export class TacticalExecutor {
   /**
    * Complete task execution
    */
-  completeExecution(task: Task, result?: unknown): void {
-    if (task.id !== this.currentTask?.id) {
+  completeExecution(task: GoalTaskNode, result?: unknown): void {
+    if (task.id !== this.currentTask?.id || task.type !== "task") {
       return;
     }
 
-    task.status = "completed";
+    task.taskStatus = "completed";
     task.progress = 100;
     task.result = result;
     task.updatedAt = Date.now();
@@ -107,12 +114,12 @@ export class TacticalExecutor {
   /**
    * Fail task execution
    */
-  failExecution(task: Task, error: string): void {
-    if (task.id !== this.currentTask?.id) {
+  failExecution(task: GoalTaskNode, error: string): void {
+    if (task.id !== this.currentTask?.id || task.type !== "task") {
       return;
     }
 
-    task.status = "failed";
+    task.taskStatus = "failed";
     task.error = error;
     task.updatedAt = Date.now();
 
@@ -124,7 +131,7 @@ export class TacticalExecutor {
   /**
    * Get current active task
    */
-  getCurrentTask(): Task | null {
+  getCurrentTask(): GoalTaskNode | null {
     return this.currentTask ? { ...this.currentTask } : null;
   }
 

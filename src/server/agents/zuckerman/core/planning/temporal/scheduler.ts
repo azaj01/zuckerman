@@ -3,7 +3,7 @@
  * Manages scheduled tasks and time triggers
  */
 
-import type { Task } from "../types.js";
+import type { GoalTaskNode } from "../types.js";
 
 /**
  * Temporal Scheduler
@@ -12,12 +12,12 @@ export class TemporalScheduler {
   /**
    * Check if scheduled task is due
    */
-  isDue(task: Task): boolean {
-    if (task.type !== "scheduled") {
+  isDue(node: GoalTaskNode): boolean {
+    if (node.type !== "task") {
       return false;
     }
 
-    const triggerTime = task.metadata?.triggerTime as number | undefined;
+    const triggerTime = node.metadata?.triggerTime as number | undefined;
     if (!triggerTime) {
       return false;
     }
@@ -28,12 +28,12 @@ export class TemporalScheduler {
   /**
    * Get time until task is due (milliseconds)
    */
-  getTimeUntilDue(task: Task): number | null {
-    if (task.type !== "scheduled") {
+  getTimeUntilDue(node: GoalTaskNode): number | null {
+    if (node.type !== "task") {
       return null;
     }
 
-    const triggerTime = task.metadata?.triggerTime as number | undefined;
+    const triggerTime = node.metadata?.triggerTime as number | undefined;
     if (!triggerTime) {
       return null;
     }
@@ -44,16 +44,16 @@ export class TemporalScheduler {
   /**
    * Filter tasks that are due
    */
-  filterDueTasks(tasks: Task[]): Task[] {
-    return tasks.filter((task) => this.isDue(task));
+  filterDueTasks(nodes: GoalTaskNode[]): GoalTaskNode[] {
+    return nodes.filter((node) => this.isDue(node));
   }
 
   /**
    * Sort tasks by due time (earliest first)
    */
-  sortByDueTime(tasks: Task[]): Task[] {
-    return tasks
-      .filter((task) => task.type === "scheduled")
+  sortByDueTime(nodes: GoalTaskNode[]): GoalTaskNode[] {
+    return nodes
+      .filter((node) => node.type === "task" && node.metadata?.triggerTime)
       .sort((a, b) => {
         const timeA = (a.metadata?.triggerTime as number) || Infinity;
         const timeB = (b.metadata?.triggerTime as number) || Infinity;

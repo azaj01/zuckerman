@@ -3,19 +3,17 @@
  * Task queue management and planning
  */
 
-import type { Task, PlanningState, PlanningStats, PendingInterruption, ProcessQueueResult } from "./types.js";
+import type { GoalTaskNode, PlanningState, PlanningStats, PendingInterruption, ProcessQueueResult } from "./types.js";
 import type { MemoryManager } from "../memory/types.js";
 import type { FocusState, UrgencyLevel } from "../attention/types.js";
 import type { TaskStep } from "./tactical/steps.js";
 import type { ExecutiveController } from "../attention/index.js";
 import type { LLMMessage } from "@server/world/providers/llm/types.js";
-import { TaskQueueManager } from "./queue.js";
-import { DependencyManager } from "./hierarchical/index.js";
+import { StrategicManager } from "./strategic/index.js";
 import { TacticalExecutor, StepSequenceManager } from "./tactical/index.js";
 import { TaskSwitcher } from "./reactive/index.js";
 import { TemporalScheduler } from "./temporal/index.js";
 import { FallbackStrategyManager } from "./contingency/index.js";
-import { scoreRelevance } from "../attention/selective/index.js";
 import { LLMManager } from "@server/world/providers/llm/index.js";
 
 /**
@@ -24,8 +22,7 @@ import { LLMManager } from "@server/world/providers/llm/index.js";
  */
 export class PlanningManager {
   private agentId: string;
-  private queueManager: TaskQueueManager;
-  private dependencyManager: DependencyManager;
+  private strategicManager: StrategicManager; // Tree-based planning
   private executor: TacticalExecutor;
   private switcher: TaskSwitcher;
   private scheduler: TemporalScheduler;
@@ -36,11 +33,12 @@ export class PlanningManager {
   private attentionController: ExecutiveController | null = null;
   private pendingInterruption: PendingInterruption | null = null;
   private llmManager: LLMManager;
+  private memoryManager: MemoryManager | null = null;
 
-  constructor(agentId: string, attentionController?: ExecutiveController) {
+  constructor(agentId: string, attentionController?: ExecutiveController, memoryManager?: MemoryManager) {
     this.agentId = agentId;
-    this.queueManager = new TaskQueueManager();
-    this.dependencyManager = new DependencyManager();
+    this.memoryManager = memoryManager || null;
+    this.strategicManager = new StrategicManager(this.memoryManager);
     this.executor = new TacticalExecutor();
     this.switcher = new TaskSwitcher();
     this.scheduler = new TemporalScheduler();
@@ -64,6 +62,15 @@ export class PlanningManager {
   }
 
   /**
+   * Set memory manager (for memory integration)
+   */
+  setMemoryManager(memoryManager: MemoryManager): void {
+    this.memoryManager = memoryManager;
+    // Update strategic manager with memory manager
+    this.strategicManager.setMemoryManager(memoryManager);
+  }
+
+  /**
    * Set current focus state (from attention system)
    */
   setFocus(focus: FocusState | null): void {
@@ -82,105 +89,94 @@ export class PlanningManager {
   }
 
   /**
-   * Add task to queue
+   * Add goal or task to tree
+   * UPDATED: Uses tree structure instead of queue
    */
-  addTask(task: Omit<Task, "id" | "status" | "createdAt" | "updatedAt" | "priority">): string {
-    // Calculate priority based on urgency (from attention system)
-    const priority = this.calculatePriorityFromUrgency(task.urgency);
-
-    const taskId = this.queueManager.addTask({
-      ...task,
-      priority,
-    });
-
-    // Re-prioritize queue based on attention focus
-    this.reprioritizeQueue();
-
-    return taskId;
+  async addGoalOrTask(
+    title: string,
+    description: string,
+    urgency: UrgencyLevel,
+    isGoal: boolean = false,
+    parentId?: string,
+    conversationId?: string
+  ): Promise<string> {
+    if (isGoal) {
+      const goal = await this.strategicManager.createGoal(title, description, urgency, this.currentFocus, conversationId);
+      return goal.id;
+    } else {
+      // LLM will decide priority - use default for now
+      const task = this.strategicManager.createTask(title, description, urgency, 0.5, parentId);
+      return task.id;
+    }
   }
 
-  /**
-   * Calculate priority from urgency level (attention-based)
-   */
-  private calculatePriorityFromUrgency(urgency: Task["urgency"]): number {
-    const urgencyWeights: Record<Task["urgency"], number> = {
-      critical: 1.0,
-      high: 0.8,
-      medium: 0.5,
-      low: 0.3,
-    };
-    return urgencyWeights[urgency];
-  }
+
 
   /**
-   * Process queue - get next task to execute
+   * Process tree - get next task to execute
+   * UPDATED: Uses tree structure instead of queue
    * ENHANCED: Uses LLM-based continuity assessment and updates attention
    * Returns ProcessQueueResult which can be a task, pending interruption, or none
    */
-  async processQueue(conversationId?: string, originalUserMessage?: string): Promise<ProcessQueueResult> {
-    const queue = this.queueManager.getQueue();
-    const completedIds = new Set(
-      queue.completed.filter((t) => t.status === "completed").map((t) => t.id)
-    );
-
-    // Filter ready tasks (dependencies satisfied)
-    const readyTasks = this.dependencyManager.filterReadyTasks(queue.pending, completedIds);
-
-    if (readyTasks.length === 0) {
-      return { type: "none", task: null };
+  async processTree(conversationId?: string, originalUserMessage?: string): Promise<ProcessQueueResult> {
+    // Check for goals that need re-decomposition due to context changes
+    if (this.currentFocus) {
+      const redecomposedCount = await this.strategicManager.checkAndRedecomposeGoals(
+        this.currentFocus.urgency || "medium",
+        this.currentFocus
+      );
+      if (redecomposedCount > 0) {
+        console.log(`[Planning] Re-decomposed ${redecomposedCount} goal(s) due to context changes`);
+      }
     }
 
-    // Prioritize ready tasks using attention system
-    const prioritized = this.prioritizeByAttention(readyTasks);
+    // Get ready tasks from tree
+    const readyTasks = this.strategicManager.getReadyTasks();
 
-    // Get current task
-    const currentTask = this.executor.getCurrentTask();
+    if (readyTasks.length === 0) {
+      return { type: "none", node: null };
+    }
 
-    // Check if should switch using LLM-based continuity assessment
-    const nextTask = prioritized[0];
+    // LLM will decide priority - for now just use ready tasks as-is
+    const prioritized = readyTasks;
+
+    // Get current node
+    const currentNode = this.executor.getCurrentTask() || this.strategicManager.getActiveNode();
+
+    // Use LLM to decide if should switch
+    const nextNode = prioritized[0];
     let shouldSwitch = true;
     let assessment = null;
     
-    if (currentTask) {
-      if (currentTask.id === nextTask.id) {
+    if (currentNode && nextNode) {
+      if (currentNode.id === nextNode.id) {
         // Same task - continue
-        return { type: "task", task: currentTask };
+        return { type: "task", node: currentNode };
       }
 
-      // Critical urgency always switches immediately without asking
-      if (nextTask.urgency === "critical") {
-        shouldSwitch = true;
-      } else {
-        // Use LLM to assess continuity and switching decision
-        assessment = await this.switcher.shouldSwitchWithLLM(
-          currentTask,
-          nextTask,
-          this.currentFocus
-        );
-        
-        shouldSwitch = assessment.shouldSwitch;
-        
-        // Log assessment for debugging
-        if (!shouldSwitch && assessment.continuityStrength > 0.7) {
-          console.log(`[Planning] Continuity assessment: strength=${assessment.continuityStrength.toFixed(2)}, switch=${shouldSwitch}, reason: ${assessment.reasoning}`);
-        }
-      }
+      // Use LLM to decide switching
+      assessment = await this.switcher.shouldSwitchWithLLM(
+        currentNode,
+        nextNode,
+        this.currentFocus
+      );
+      
+      shouldSwitch = assessment.shouldSwitch;
     }
 
-    // If switching would interrupt current task and not critical, ask for confirmation
-    if (currentTask && shouldSwitch && nextTask.urgency !== "critical") {
+    // If switching would interrupt current task, ask for confirmation
+    if (currentNode && shouldSwitch && nextNode) {
       // Store pending interruption for user confirmation
-      // Use original user message if provided, otherwise fall back to task description/title
-      const originalMessage = originalUserMessage || nextTask.description || nextTask.title;
+      const originalMessage = originalUserMessage || nextNode.description || nextNode.title;
       
       this.pendingInterruption = {
-        currentTask,
-        newTask: nextTask,
+        currentNode,
+        newNode: nextNode,
         originalUserMessage: originalMessage,
-        assessment: assessment || {
-          continuityStrength: 0.5,
-          shouldSwitch: true,
-          reasoning: "Task switching required",
+        assessment: {
+          continuityStrength: assessment?.continuityStrength ?? 0.5,
+          shouldSwitch: assessment?.shouldSwitch ?? true,
+          reasoning: assessment?.reasoning || "Task switching required",
         },
         createdAt: Date.now(),
         conversationId,
@@ -193,42 +189,50 @@ export class PlanningManager {
     }
 
     // Switch to new task if needed (critical or no current task)
-    if (currentTask && shouldSwitch) {
+    if (currentNode && shouldSwitch && nextNode) {
       // Save context of current task before switching
-      this.switcher.saveTaskContext(currentTask.id, {
-        progress: currentTask.progress || 0,
-        status: currentTask.status,
-        metadata: currentTask.metadata || {},
+      this.switcher.saveTaskContext(currentNode.id, {
+        progress: currentNode.progress || 0,
+        status: currentNode.taskStatus || "pending",
+        metadata: currentNode.metadata || {},
       });
 
-      // Mark current task as pending (interrupted) and add back to queue
-      const interruptedTask: Task = {
-        ...currentTask,
-        status: "pending",
-        updatedAt: Date.now(),
-      };
-      this.queueManager.addTask(interruptedTask);
+      // Mark current node as pending (interrupted)
+      if (currentNode.type === "task") {
+        currentNode.taskStatus = "pending";
+        currentNode.updatedAt = Date.now();
+      }
 
       // Clear executor
       this.executor.clear();
-      this.switcher.switchTask(currentTask, nextTask);
       
       // Update attention focus for new task
-      this.updateAttentionForTask(nextTask, conversationId);
-    } else if (!currentTask && nextTask) {
+      this.updateAttentionForNode(nextNode, conversationId);
+    } else if (!currentNode && nextNode) {
       // Starting first task
-      this.updateAttentionForTask(nextTask, conversationId);
+      this.updateAttentionForNode(nextNode, conversationId);
     }
 
     // Start new task
-    this.queueManager.startTask(nextTask.id);
-    const activeTask = this.queueManager.getActiveTask();
-    if (activeTask) {
-      this.executor.startExecution(activeTask);
-      return { type: "task", task: activeTask };
+    if (nextNode && nextNode.type === "task") {
+      nextNode.taskStatus = "active";
+      nextNode.updatedAt = Date.now();
+      this.strategicManager.setActiveNode(nextNode.id);
+      
+      this.executor.startExecution(nextNode);
+      
+      return { type: "task", node: nextNode };
     }
 
-    return { type: "none", task: null };
+    return { type: "none", node: null };
+  }
+
+  /**
+   * Process queue (legacy method - delegates to processTree)
+   * @deprecated Use processTree instead
+   */
+  async processQueue(conversationId?: string, originalUserMessage?: string): Promise<ProcessQueueResult> {
+    return this.processTree(conversationId, originalUserMessage);
   }
 
   /**
@@ -245,7 +249,7 @@ export class PlanningManager {
   async handleInterruptionConfirmation(
     userResponse: string,
     conversationId?: string
-  ): Promise<{ proceed: boolean; addToQueue: boolean; message?: string; newTask?: Task }> {
+  ): Promise<{ proceed: boolean; addToQueue: boolean; message?: string; newTask?: GoalTaskNode }> {
     if (!this.pendingInterruption) {
       return { proceed: false, addToQueue: false };
     }
@@ -292,35 +296,44 @@ Return ONLY valid JSON, no other text.`;
         const interruption = this.pendingInterruption;
         this.pendingInterruption = null;
 
-        // Perform the switch
-        this.switcher.saveTaskContext(interruption.currentTask.id, {
-          progress: interruption.currentTask.progress || 0,
-          status: interruption.currentTask.status,
-          metadata: interruption.currentTask.metadata || {},
+        // Perform the switch (using tree structure)
+        const currentNode = interruption.currentNode;
+        const newNode = interruption.newNode;
+        
+        // Save context
+        this.switcher.saveTaskContext(currentNode.id, {
+          progress: currentNode.progress || 0,
+          status: currentNode.type === "task" ? (currentNode.taskStatus || "pending") : "pending",
+          metadata: currentNode.metadata || {},
         });
 
-        const interruptedTask: Task = {
-          ...interruption.currentTask,
-          status: "pending",
-          updatedAt: Date.now(),
-        };
-        this.queueManager.addTask(interruptedTask);
+        // Mark current node as pending (interrupted)
+        if (currentNode.type === "task") {
+          currentNode.taskStatus = "pending";
+          currentNode.updatedAt = Date.now();
+        }
 
         this.executor.clear();
-        this.switcher.switchTask(interruption.currentTask, interruption.newTask);
-        this.updateAttentionForTask(interruption.newTask, conversationId);
+        
+        this.switcher.switchTask(currentNode, newNode);
+        
+        // Update attention
+        this.updateAttentionForNode(newNode, conversationId);
 
-        this.queueManager.startTask(interruption.newTask.id);
-        const activeTask = this.queueManager.getActiveTask();
-        if (activeTask) {
-          this.executor.startExecution(activeTask);
+        // Start new task
+        if (newNode.type === "task") {
+          newNode.taskStatus = "active";
+          newNode.updatedAt = Date.now();
+          this.strategicManager.setActiveNode(newNode.id);
+          
+          this.executor.startExecution(newNode);
         }
 
         return {
           proceed: true,
           addToQueue: false,
           message: parsed.reasoning,
-          newTask: activeTask || interruption.newTask,
+          newTask: newNode,
         };
       } else if (addToQueue) {
         // User said "later" - task is already in queue, just clear pending state
@@ -332,15 +345,13 @@ Return ONLY valid JSON, no other text.`;
           message: parsed.reasoning,
         };
       } else {
-        // User said "nevermind" - remove task from queue and discard
+        // User said "nevermind" - cancel the new task
         const interruption = this.pendingInterruption;
         this.pendingInterruption = null;
         
-        // Remove the task from queue if it exists
-        const queue = this.queueManager.getQueue();
-        const taskIndex = queue.pending.findIndex(t => t.id === interruption.newTask.id);
-        if (taskIndex !== -1) {
-          queue.pending.splice(taskIndex, 1);
+        // Cancel the new node in tree
+        if (interruption.newNode.type === "task") {
+          this.strategicManager.cancelTask(interruption.newNode.id);
         }
 
         return {
@@ -360,44 +371,45 @@ Return ONLY valid JSON, no other text.`;
         const interruption = this.pendingInterruption;
         this.pendingInterruption = null;
 
-        this.switcher.saveTaskContext(interruption.currentTask.id, {
-          progress: interruption.currentTask.progress || 0,
-          status: interruption.currentTask.status,
-          metadata: interruption.currentTask.metadata || {},
+        const currentNode = interruption.currentNode;
+        const newNode = interruption.newNode;
+        
+        this.switcher.saveTaskContext(currentNode.id, {
+          progress: currentNode.progress || 0,
+          status: currentNode.type === "task" ? (currentNode.taskStatus || "pending") : "pending",
+          metadata: currentNode.metadata || {},
         });
 
-        const interruptedTask: Task = {
-          ...interruption.currentTask,
-          status: "pending",
-          updatedAt: Date.now(),
-        };
-        this.queueManager.addTask(interruptedTask);
-
-        this.executor.clear();
-        this.switcher.switchTask(interruption.currentTask, interruption.newTask);
-        this.updateAttentionForTask(interruption.newTask, conversationId);
-
-        this.queueManager.startTask(interruption.newTask.id);
-        const activeTask = this.queueManager.getActiveTask();
-        if (activeTask) {
-          this.executor.startExecution(activeTask);
+        if (currentNode.type === "task") {
+          currentNode.taskStatus = "pending";
+          currentNode.updatedAt = Date.now();
         }
 
-        return { proceed: true, addToQueue: false, newTask: activeTask || interruption.newTask };
+        this.executor.clear();
+        
+        this.switcher.switchTask(currentNode, newNode);
+        this.updateAttentionForNode(newNode, conversationId);
+
+        if (newNode.type === "task") {
+          newNode.taskStatus = "active";
+          newNode.updatedAt = Date.now();
+          this.strategicManager.setActiveNode(newNode.id);
+          
+          this.executor.startExecution(newNode);
+        }
+
+        return { proceed: true, addToQueue: false, newTask: newNode };
       } else if (addToQueue) {
         this.pendingInterruption = null;
         return { proceed: false, addToQueue: true };
       } else {
-        // User said "nevermind" - remove task from queue and discard
+        // User said "nevermind" - cancel the new task
         const interruption = this.pendingInterruption;
         this.pendingInterruption = null;
         
         if (interruption) {
-          // Remove task from queue
-          const queue = this.queueManager.getQueue();
-          const taskIndex = queue.pending.findIndex(t => t.id === interruption.newTask.id);
-          if (taskIndex !== -1) {
-            queue.pending.splice(taskIndex, 1);
+          if (interruption.newNode.type === "task") {
+            this.strategicManager.cancelTask(interruption.newNode.id);
           }
         }
 
@@ -411,15 +423,17 @@ Return ONLY valid JSON, no other text.`;
    * Generates contextual, natural confirmations that adapt to the user's request type
    */
   async generateInterruptionConfirmation(
-    currentTask: Task,
+    currentNode: GoalTaskNode,
     newRequest: string,
     newUrgency: string
   ): Promise<string> {
     try {
       const model = await this.llmManager.fastCheap();
-      const progressText = currentTask.progress 
-        ? ` (${currentTask.progress}% complete)` 
-        : "";
+      
+      // Handle both GoalTaskNode and Task
+      const currentTitle = currentNode.title;
+      const currentProgress = currentNode.progress || 0;
+      const progressText = currentProgress ? ` (${currentProgress}% complete)` : "";
 
       const systemPrompt = `You're a helpful assistant who's currently busy working on something. The user just asked you something new.
 
@@ -427,7 +441,7 @@ You want to be helpful, but you're in the middle of something. Respond naturally
 
 Understand what they're asking and respond in a way that makes sense. Don't just repeat their words back to them.`;
 
-      const userPrompt = `You're currently working on: ${currentTask.title}${progressText}
+      const userPrompt = `You're currently working on: ${currentTitle}${progressText}
 
 The user just asked: "${newRequest}"
 
@@ -450,110 +464,197 @@ Respond naturally - like you're a busy person who wants to help but needs to che
   }
 
   /**
-   * Update attention focus for task
+   * Update attention focus for node
    */
-  private updateAttentionForTask(task: Task, conversationId?: string): void {
-    if (!this.attentionController) {
+  private updateAttentionForNode(node: GoalTaskNode, conversationId?: string): void {
+    if (!this.attentionController || node.type !== "task") {
       return;
     }
 
     this.attentionController.updateTaskFocus(
       this.agentId,
-      task.title,
-      task.urgency,
+      node.title,
+      node.urgency || "medium",
       conversationId
     );
   }
 
   /**
+   * Update attention focus for task
+   */
+  private updateAttentionForTask(node: GoalTaskNode, conversationId?: string): void {
+    if (!this.attentionController || node.type !== "task") {
+      return;
+    }
+
+    this.attentionController.updateTaskFocus(
+      this.agentId,
+      node.title,
+      node.urgency || "medium",
+      conversationId
+    );
+  }
+
+
+  /**
    * Get current task
    */
-  getCurrentTask(): Task | null {
-    return this.executor.getCurrentTask() || this.queueManager.getActiveTask();
+  getCurrentTask(): GoalTaskNode | null {
+    return this.executor.getCurrentTask() || this.strategicManager.getActiveNode();
+  }
+
+  /**
+   * Get current node (tree-based)
+   */
+  getCurrentNode(): GoalTaskNode | null {
+    return this.executor.getCurrentTask() || this.strategicManager.getActiveNode();
   }
 
   /**
    * Complete current task
-   * ENHANCED: Clears task from attention focus and processes queue for next task
+   * ENHANCED: Clears task from attention focus, records in episodic memory, and processes tree for next task
    */
-  async completeCurrentTask(result?: unknown, conversationId?: string): Promise<Task | null> {
-    const currentTask = this.executor.getCurrentTask();
-    if (!currentTask) {
+  async completeCurrentTask(result?: unknown, conversationId?: string): Promise<GoalTaskNode | null> {
+    const currentNode = this.getCurrentNode();
+    if (!currentNode || currentNode.type !== "task") {
       return null;
     }
 
     const executionTime = this.executor.getExecutionTime() || 0;
-    this.executor.completeExecution(currentTask, result);
-    this.queueManager.completeTask(currentTask.id, result);
+    
+    // Complete in tree
+    this.strategicManager.completeTask(currentNode.id, result);
+    
+    // Complete in executor
+    this.executor.completeExecution(currentNode, result);
+
+    // Record task completion in memory
+    if (this.memoryManager) {
+      this.memoryManager.onTaskCompleted(
+        currentNode.id,
+        currentNode.title,
+        result,
+        executionTime,
+        conversationId
+      );
+    }
 
     // Update stats
     this.updateStats("completed", executionTime);
-    this.switcher.clearContext(currentTask.id);
+    this.switcher.clearContext(currentNode.id);
 
     // Clear task from attention focus (but keep topic)
     if (this.attentionController) {
       this.attentionController.clearTaskFocus(this.agentId);
     }
 
-    // Process queue to get next task (if any)
-    const queueResult = await this.processQueue(conversationId);
+    // Process tree to get next task (if any)
+    const treeResult = await this.processTree(conversationId);
     
-    // If there's a next task, attention will be updated by processQueue()
+    // If there's a next task, attention will be updated by processTree()
     // If no next task, attention focus remains cleared (topic only, no task)
 
-    if (queueResult.type === "task") {
-      return queueResult.task;
+    if (treeResult.type === "task") {
+      return treeResult.node;
     }
     return null;
   }
 
   /**
    * Fail current task
+   * UPDATED: Uses tree structure
    */
-  failCurrentTask(error: string): boolean {
-    const currentTask = this.executor.getCurrentTask();
-    if (!currentTask) {
+  async failCurrentTask(error: string): Promise<boolean> {
+    const currentNode = this.getCurrentNode();
+    if (!currentNode || currentNode.type !== "task") {
       return false;
     }
 
-    this.executor.failExecution(currentTask, error);
-    this.queueManager.failTask(currentTask.id, error);
+    // Fail in tree
+    this.strategicManager.failTask(currentNode.id, error);
+    
+    // Fail in executor
+    this.executor.failExecution(currentNode, error);
 
-    // Try fallback strategy
-    const fallbackTask = this.fallbackManager.handleFailure(currentTask, error);
-    if (fallbackTask) {
-      // Add fallback task to queue (use queueManager directly since task already has ID)
-      this.queueManager.addTask(fallbackTask);
-      // Re-prioritize queue
-      this.reprioritizeQueue();
+    // Record task failure in memory
+    if (this.memoryManager) {
+      this.memoryManager.onTaskFailed(
+        currentNode.id,
+        currentNode.title,
+        error
+      );
+    }
+
+    // Try fallback strategy using LLM
+    const fallbackNode = await this.fallbackManager.handleFailure(currentNode, error);
+    if (fallbackNode) {
+      // Add fallback task to tree
+      const createdFallback = this.strategicManager.createTask(
+        fallbackNode.title,
+        fallbackNode.description || "",
+        fallbackNode.urgency || "medium",
+        fallbackNode.priority || 0.5,
+        currentNode.parentId
+      );
+
+      // Record fallback triggered in memory
+      if (this.memoryManager) {
+        this.memoryManager.onFallbackTriggered(
+          currentNode.id,
+          currentNode.title,
+          createdFallback.id,
+          createdFallback.title,
+          error
+        );
+      }
     }
 
     // Update stats
     this.updateStats("failed", 0);
-    this.switcher.clearContext(currentTask.id);
+    this.switcher.clearContext(currentNode.id);
 
     return true;
   }
 
   /**
    * Update task progress
+   * UPDATED: Uses tree structure
    */
   updateProgress(progress: number): boolean {
-    const currentTask = this.executor.getCurrentTask();
-    if (!currentTask) {
+    const currentNode = this.getCurrentNode();
+    if (!currentNode || currentNode.type !== "task") {
       return false;
     }
 
-    this.executor.updateProgress(currentTask, progress);
-    this.queueManager.updateProgress(currentTask.id, progress);
+    // Update in tree
+    this.strategicManager.updateProgress(currentNode.id, progress);
+    
+    // Update in executor
+    this.executor.updateProgress(currentNode, progress);
+    
     return true;
   }
 
   /**
    * Complete current step (tactical planning)
    */
-  completeCurrentStep(result?: unknown): boolean {
-    return this.executor.completeCurrentStep(result);
+  completeCurrentStep(result?: unknown, conversationId?: string): boolean {
+    const currentStep = this.executor.getCurrentStep();
+    const currentTask = this.getCurrentNode();
+    
+    const completed = this.executor.completeCurrentStep(result);
+    
+    // Record step completion in memory
+    if (completed && currentStep && currentTask && this.memoryManager) {
+      this.memoryManager.onStepCompleted(
+        currentTask.id,
+        currentStep.title,
+        currentStep.order,
+        conversationId
+      );
+    }
+    
+    return completed;
   }
 
   /**
@@ -589,111 +690,60 @@ Respond naturally - like you're a busy person who wants to help but needs to che
    * Handle step failure with contingency planning
    * ENHANCED: Updates attention focus if fallback created
    */
-  async handleStepFailure(step: TaskStep, error: string, conversationId?: string): Promise<Task | null> {
-    const currentTask = this.executor.getCurrentTask();
-    if (!currentTask) {
+  async handleStepFailure(step: TaskStep, error: string, conversationId?: string): Promise<GoalTaskNode | null> {
+    const currentNode = this.getCurrentNode();
+    if (!currentNode || currentNode.type !== "task") {
       return null;
     }
 
-    // Try fallback strategy
-    const fallbackTask = this.fallbackManager.handleFailure(currentTask, error);
-    if (fallbackTask) {
-      // Add fallback task to queue (use queueManager directly since task already has ID)
-      this.queueManager.addTask(fallbackTask);
-      // Re-prioritize queue
-      this.reprioritizeQueue();
+    // Record step failure in memory
+    if (this.memoryManager) {
+      this.memoryManager.onStepFailed(
+        currentNode.id,
+        step.title,
+        step.order,
+        error,
+        conversationId
+      );
+    }
+
+    // Try fallback strategy using LLM
+    const fallbackNode = await this.fallbackManager.handleFailure(currentNode, error);
+    if (fallbackNode) {
+      // Add fallback task to tree
+      this.strategicManager.createTask(
+        fallbackNode.title,
+        fallbackNode.description || "",
+        fallbackNode.urgency || "medium",
+        fallbackNode.priority || 0.5,
+        currentNode.parentId
+      );
       
       // Update attention focus for fallback task
-      this.updateAttentionForTask(fallbackTask, conversationId);
+      this.updateAttentionForTask(fallbackNode, conversationId);
       
-      return fallbackTask;
+      return fallbackNode;
     }
 
     return null;
   }
 
   /**
-   * Get queue state
+   * Get queue state (tree-based)
    */
   getQueueState(): PlanningState {
-    const queue = this.queueManager.getQueue();
-    const currentTask = this.getCurrentTask();
+    const tree = this.strategicManager.getTree();
+    const currentNode = this.getCurrentNode();
 
     return {
       agentId: this.agentId,
-      queue,
-      currentTask,
+      tree,
+      currentNode,
       lastSwitched: this.switcher.getSwitchHistory()[this.switcher.getSwitchHistory().length - 1]?.timestamp || 0,
       stats: { ...this.stats },
     };
   }
 
-  /**
-   * Integrate with Prospective Memory
-   * Load tasks from prospective memory
-   */
-  async integrateProspectiveMemory(memoryManager: MemoryManager): Promise<void> {
-    try {
-      const prospectiveMemories = await memoryManager.getProspectiveMemories({
-        limit: 100,
-      });
-
-      for (const memory of prospectiveMemories) {
-        if (memory.status !== "pending") {
-          continue;
-        }
-
-        // Check if task already exists
-        const existingTask = this.queueManager.getTask(memory.id);
-        if (existingTask) {
-          continue;
-        }
-
-        // Convert prospective memory to task
-        const urgency: Task["urgency"] = (memory.priority || 0) >= 0.8 ? "high" : (memory.priority || 0) >= 0.5 ? "medium" : "low";
-
-        this.addTask({
-          title: memory.intention,
-          description: `From prospective memory: ${memory.intention}`,
-          type: memory.triggerTime ? "scheduled" : "immediate",
-          source: "prospective",
-          urgency,
-          prospectiveMemoryId: memory.id,
-          metadata: {
-            triggerTime: memory.triggerTime,
-            triggerContext: memory.triggerContext,
-          },
-        });
-      }
-
-      // Check for due scheduled tasks
-      const queue = this.queueManager.getQueue();
-      const dueTasks = this.scheduler.filterDueTasks(queue.pending);
-      for (const task of dueTasks) {
-        // Tasks are already in queue, scheduler just identifies them
-      }
-    } catch (error) {
-      console.warn(`[Planning] Failed to integrate prospective memory:`, error);
-    }
-  }
-
-  /**
-   * Sync task completion back to Prospective Memory
-   */
-  async syncWithProspectiveMemory(memoryManager: MemoryManager): Promise<void> {
-    const queue = this.queueManager.getQueue();
-    const completed = queue.completed.filter((t) => t.prospectiveMemoryId);
-
-    for (const task of completed) {
-      if (task.prospectiveMemoryId && task.status === "completed") {
-        try {
-          memoryManager.completeProspectiveMemory(task.prospectiveMemoryId);
-        } catch (error) {
-          console.warn(`[Planning] Failed to sync task ${task.id} to prospective memory:`, error);
-        }
-      }
-    }
-  }
 
   /**
    * Register fallback plan for a task
@@ -702,69 +752,7 @@ Respond naturally - like you're a busy person who wants to help but needs to che
     return this.fallbackManager.registerFallback(taskId, fallbackDescription, priority);
   }
 
-  /**
-   * Prioritize tasks using attention system
-   */
-  private prioritizeByAttention(tasks: Task[]): Task[] {
-    // Score tasks by relevance to current focus
-    const tasksWithScores = tasks.map((task) => {
-      let priority = this.calculatePriorityFromUrgency(task.urgency);
 
-      // Boost priority if task matches current focus
-      if (this.currentFocus) {
-        const taskContent = `${task.title} ${task.description || ""}`;
-        const relevance = scoreRelevance(taskContent, this.currentFocus);
-        
-        // If task matches focus topic, boost priority
-        if (relevance.score > 0.5) {
-          priority += relevance.score * 0.3;
-        }
-
-        // If task matches current task from focus, boost more
-        if (this.currentFocus.currentTask && task.title.toLowerCase().includes(this.currentFocus.currentTask.toLowerCase())) {
-          priority += 0.2;
-        }
-      }
-
-      // Source weight (user requests prioritized)
-      const sourceWeight = task.source === "user" ? 0.1 : task.source === "prospective" ? 0.05 : 0.0;
-      priority += sourceWeight;
-
-      // Dependencies reduce priority
-      if (task.dependencies && task.dependencies.length > 0) {
-        priority *= 0.8;
-      }
-
-      return {
-        task,
-        priority: Math.max(0, Math.min(1, priority)),
-      };
-    });
-
-    // Sort by priority (highest first), then by creation time (oldest first)
-    tasksWithScores.sort((a, b) => {
-      const priorityDiff = b.priority - a.priority;
-      if (priorityDiff !== 0) {
-        return priorityDiff;
-      }
-      return a.task.createdAt - b.task.createdAt; // FIFO within same priority
-    });
-
-    // Update task priorities and return sorted tasks
-    return tasksWithScores.map((item) => {
-      item.task.priority = item.priority;
-      return item.task;
-    });
-  }
-
-  /**
-   * Reprioritize queue
-   */
-  private reprioritizeQueue(): void {
-    const queue = this.queueManager.getQueue();
-    const prioritized = this.prioritizeByAttention(queue.pending);
-    this.queueManager.setPendingTasks(prioritized);
-  }
 
   /**
    * Update statistics
@@ -787,9 +775,10 @@ Respond naturally - like you're a busy person who wants to help but needs to che
 
   /**
    * Cancel task
+   * UPDATED: Uses tree structure
    */
   cancelTask(taskId: string): boolean {
-    const cancelled = this.queueManager.cancelTask(taskId);
+    const cancelled = this.strategicManager.cancelTask(taskId);
     if (cancelled) {
       this.updateStats("cancelled", 0);
       this.switcher.clearContext(taskId);
@@ -800,17 +789,14 @@ Respond naturally - like you're a busy person who wants to help but needs to che
 
 // Export types and classes
 export * from "./types.js";
-export { TaskQueueManager } from "./queue.js";
 export { TacticalExecutor } from "./tactical/index.js";
 export { TaskSwitcher } from "./reactive/index.js";
 export { TemporalScheduler } from "./temporal/index.js";
 export { FallbackStrategyManager } from "./contingency/index.js";
-export { DependencyManager } from "./hierarchical/index.js";
 
 // Export planning type modules
 export * from "./strategic/index.js";
 export * from "./tactical/index.js";
-export * from "./hierarchical/index.js";
 export * from "./reactive/index.js";
 export * from "./temporal/index.js";
 export * from "./contingency/index.js";

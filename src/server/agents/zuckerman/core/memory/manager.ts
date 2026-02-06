@@ -11,6 +11,7 @@ import { ProspectiveMemoryStore } from "./stores/prospective/index.js";
 import { EmotionalMemoryStore } from "./stores/emotional/index.js";
 import type {
   MemoryManager,
+  MemoryType,
   WorkingMemory,
   EpisodicMemory,
   SemanticMemory,
@@ -94,275 +95,45 @@ export class UnifiedMemoryManager implements MemoryManager {
     }
   }
 
-  // ========== Working Memory ==========
-  // Active buffer for current task processing. Short-lived (minutes to hours), in-memory only. No file storage.
+  // ========== Internal Memory Management ==========
+  // These methods are private and only used internally
 
-  setWorkingMemory(
-    conversationId: string,
-    content: string,
-    context?: Record<string, unknown>
-  ): void {
-    this.workingMemory.set(conversationId, content, context);
-  }
-
-  getWorkingMemory(conversationId: string): WorkingMemory | null {
-    return this.workingMemory.get(conversationId);
-  }
-
-  clearWorkingMemory(conversationId: string): void {
-    this.workingMemory.clear(conversationId);
-  }
-
-  // ========== Episodic Memory ==========
-  // Remembers specific events and experiences. Stored in episodic.json, also appended to daily logs. Decays over time (days to weeks).
-
-  addEpisodicMemory(
+  private addEpisodicMemory(
     memory: Omit<EpisodicMemory, "id" | "type" | "createdAt" | "updatedAt">
   ): string {
-    const id = this.episodicMemory.add(memory);
-
-    return id;
+    return this.episodicMemory.add(memory);
   }
 
-  async getEpisodicMemories(
-    options?: MemoryRetrievalOptions
-  ): Promise<EpisodicMemory[]> {
-    const results = this.episodicMemory.query({
-      conversationId: options?.conversationId,
-      startTime: options?.maxAge ? Date.now() - options.maxAge : undefined,
-      limit: options?.limit,
-      query: options?.query,
-    });
-
-    return results;
-  }
-
-  // ========== Semantic Memory ==========
-  // Stores facts, knowledge, and concepts. Permanent storage, saved to semantic.json.
-
-  addSemanticMemory(
+  private addSemanticMemory(
     memory: Omit<SemanticMemory, "id" | "type" | "createdAt" | "updatedAt">
   ): string {
-    // Store in structured JSON file only
     return this.semanticMemory.add(memory);
   }
 
-  async getSemanticMemories(
-    options?: MemoryRetrievalOptions
-  ): Promise<SemanticMemory[]> {
-    // Query from structured JSON store
-    return this.semanticMemory.query({
-      conversationId: options?.conversationId,
-      query: options?.query,
-      limit: options?.limit,
-    });
-  }
-
-  // ========== Procedural Memory ==========
-  // Stores skills, habits, and automatic patterns. Improves with use, stored in procedural.json.
-
-  addProceduralMemory(
+  private addProceduralMemory(
     memory: Omit<ProceduralMemory, "id" | "type" | "createdAt" | "updatedAt">
   ): string {
     return this.proceduralMemory.add(memory);
   }
 
-  async getProceduralMemories(trigger?: string): Promise<ProceduralMemory[]> {
-    if (trigger) {
-      return this.proceduralMemory.findMatching(trigger);
-    }
-    return this.proceduralMemory.getAll();
-  }
-
-  updateProceduralMemory(id: string, success: boolean): void {
-    this.proceduralMemory.recordUse(id, success);
-  }
-
-  // ========== Prospective Memory ==========
-  // Stores future intentions, reminders, and scheduled tasks. Triggers at specific times or contexts. Stored in prospective.json.
-
-  addProspectiveMemory(
+  private addProspectiveMemory(
     memory: Omit<ProspectiveMemory, "id" | "type" | "createdAt" | "updatedAt">
   ): string {
     return this.prospectiveMemory.add(memory);
   }
 
-  async getProspectiveMemories(
-    options?: MemoryRetrievalOptions
-  ): Promise<ProspectiveMemory[]> {
-    return this.prospectiveMemory.query({
-      conversationId: options?.conversationId,
-      status: "pending",
-      limit: options?.limit,
-    });
-  }
-
-  triggerProspectiveMemory(id: string): void {
-    this.prospectiveMemory.trigger(id);
-  }
-
-  completeProspectiveMemory(id: string): void {
-    this.prospectiveMemory.complete(id);
-  }
-
-  // ========== Emotional Memory ==========
-  // Stores emotional associations and reactions linked to other memories. Provides context for emotional responses. Stored in emotional.json.
-
-  addEmotionalMemory(
+  private addEmotionalMemory(
     memory: Omit<EmotionalMemory, "id" | "type" | "createdAt" | "updatedAt">
   ): string {
     return this.emotionalMemory.add(memory);
   }
 
-  async getEmotionalMemories(
-    targetMemoryId?: string
-  ): Promise<EmotionalMemory[]> {
-    if (targetMemoryId) {
-      return this.emotionalMemory.getByTarget(targetMemoryId);
-    }
-    return this.emotionalMemory.getAll();
-  }
 
-  // ========== Unified Retrieval ==========
-
-  async retrieveMemories(
-    options: MemoryRetrievalOptions
-  ): Promise<MemoryRetrievalResult> {
-    const allMemories: BaseMemory[] = [];
-    const types = options.types ?? [
-      "working",
-      "episodic",
-      "semantic",
-      "procedural",
-      "prospective",
-      "emotional",
-    ];
-
-    // Collect memories from all requested types
-    if (types.includes("working")) {
-      const working = options.conversationId
-        ? [this.workingMemory.get(options.conversationId)].filter(Boolean)
-        : this.workingMemory.getAll();
-      allMemories.push(...(working as BaseMemory[]));
-    }
-
-    if (types.includes("episodic")) {
-      const episodic = await this.getEpisodicMemories(options);
-      allMemories.push(...episodic);
-    }
-
-    if (types.includes("semantic")) {
-      const semantic = await this.getSemanticMemories(options);
-      allMemories.push(...semantic);
-    }
-
-    if (types.includes("procedural")) {
-      const procedural = await this.getProceduralMemories(options.query);
-      allMemories.push(...procedural);
-    }
-
-    if (types.includes("prospective")) {
-      const prospective = await this.getProspectiveMemories(options);
-      allMemories.push(...prospective);
-    }
-
-    if (types.includes("emotional")) {
-      const emotional = await this.getEmotionalMemories();
-      allMemories.push(...emotional);
-    }
-
-    // Sort by recency (newest first)
-    allMemories.sort((a, b) => b.updatedAt - a.updatedAt);
-
-    // Limit results
-    let filtered = allMemories;
-    if (options.limit) {
-      filtered = filtered.slice(0, options.limit);
-    }
-
-    return {
-      memories: filtered,
-      total: allMemories.length,
-    };
-  }
-
-  // ========== Cleanup ==========
-
-  async cleanup(): Promise<void> {
-    // Clear expired working memories
-    this.clearExpiredWorkingMemory();
-
-    // TODO: Clean up old episodic memories
-    // TODO: Clean up completed prospective memories
-  }
-
-  clearExpiredWorkingMemory(): void {
-    this.workingMemory.clearExpired();
-  }
-
-  // ========== Utility Methods ==========
-
-  /**
-   * Get due prospective memories (for periodic checking)
-   */
-  getDueProspectiveMemories(): ProspectiveMemory[] {
-    return this.prospectiveMemory.getDue();
-  }
-
-  /**
-   * Get prospective memories matching context
-   */
-  getProspectiveMemoriesByContext(context: string): ProspectiveMemory[] {
-    return this.prospectiveMemory.getByContext(context);
-  }
-
-
-  // ========== Memory Formatting for Prompts ==========
-
-  /**
-   * Get relevant memories based on query and format for context injection
-   * Used during conversation turns to inject relevant memories into the prompt
-   */
-  async getRelevantMemoryContext(options: MemoryRetrievalOptions): Promise<string> {
-    const { memories } = await this.retrieveMemories(options);
-
-    if (memories.length === 0) {
-      // Debug: log why no memories were found
-      const semanticCount = this.semanticMemory.getAll().length;
-      const episodicCount = this.episodicMemory.getAll().length;
-      console.log(`[Memory] No memories found. Query: "${options.query}", Semantic: ${semanticCount}, Episodic: ${episodicCount}, Types: ${options.types?.join(", ") || "all"}`);
-      return "";
-    }
-
-    const memoryParts = memories.map((mem) => {
-      switch (mem.type) {
-        case "semantic": {
-          const s = mem as SemanticMemory;
-          const prefix = s.category ? `${s.category}: ` : "";
-          return `[Semantic] ${prefix}${s.fact}`;
-        }
-        case "episodic": {
-          const e = mem as EpisodicMemory;
-          return `[Episodic] ${e.event}: ${e.context.what}`;
-        }
-        case "procedural": {
-          const p = mem as ProceduralMemory;
-          return `[Procedural] ${p.pattern}: ${p.action}`;
-        }
-        default:
-          return `[${mem.type}] ${JSON.stringify(mem)}`;
-      }
-    });
-
-    return `\n\n## Retrieved Memories\n${memoryParts.join("\n")}`;
-  }
-
-
-  // ========== Sleep Mode Integration ==========
+  // ========== Event-Driven Memory Methods ==========
 
   /**
    * Save consolidated memories from sleep mode
-   * Creates structured episodic/semantic memories and also saves to files for backward compatibility
+   * Creates structured episodic/semantic memories
    */
   saveConsolidatedMemories(
     memories: Array<{
@@ -382,8 +153,6 @@ export class UnifiedMemoryManager implements MemoryManager {
       });
     }
   }
-
-  // ========== Real-time Memory Extraction ==========
 
   /**
    * Process a new user message and extract/save important memories
@@ -440,5 +209,324 @@ export class UnifiedMemoryManager implements MemoryManager {
       // Don't fail if extraction fails - just log and continue
       console.warn(`[UnifiedMemoryManager] Memory extraction failed:`, extractionError);
     }
+  }
+
+  /**
+   * Get relevant memories for a question/query
+   * Searches across semantic, episodic, and procedural memories to find relevant information
+   */
+  async getRelevantMemories(
+    question: string,
+    options?: {
+      limit?: number;
+      types?: MemoryType[];
+    }
+  ): Promise<MemoryRetrievalResult> {
+    const allMemories: BaseMemory[] = [];
+    const types = options?.types ?? ["semantic", "episodic", "procedural"];
+    const limit = options?.limit ?? 20;
+    const queryLower = question.toLowerCase();
+
+    // Search semantic memories (facts, knowledge)
+    if (types.includes("semantic")) {
+      const semanticMemories = this.semanticMemory.query({
+        limit: limit * 2, // Get more to filter by relevance
+      });
+
+      // Filter by text match in fact or category
+      const relevantSemantic = semanticMemories.filter((mem) => {
+        const factMatch = mem.fact.toLowerCase().includes(queryLower);
+        const categoryMatch = mem.category?.toLowerCase().includes(queryLower);
+        const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2);
+        const factWords = mem.fact.toLowerCase().split(/\s+/);
+        const wordMatch = queryWords.some(word => factWords.some(fw => fw.includes(word) || word.includes(fw)));
+        return factMatch || categoryMatch || wordMatch;
+      });
+
+      allMemories.push(...relevantSemantic.slice(0, Math.ceil(limit / 3)));
+    }
+
+    // Search episodic memories (events, experiences)
+    if (types.includes("episodic")) {
+      const episodicMemories = this.episodicMemory.query({
+        query: question,
+        limit: limit * 2,
+      });
+
+      allMemories.push(...episodicMemories.slice(0, Math.ceil(limit / 3)));
+    }
+
+    // Search procedural memories (patterns, skills)
+    if (types.includes("procedural")) {
+      const proceduralMemories = this.proceduralMemory.findMatching(question);
+      
+      // Also search by pattern and action text
+      const allProcedural = this.proceduralMemory.getAll();
+      const textMatches = allProcedural.filter((mem) => {
+        const patternMatch = mem.pattern.toLowerCase().includes(queryLower);
+        const actionMatch = mem.action.toLowerCase().includes(queryLower);
+        return patternMatch || actionMatch;
+      });
+
+      // Combine and deduplicate
+      const combined = [...proceduralMemories, ...textMatches];
+      const unique = Array.from(new Map(combined.map(m => [m.id, m])).values());
+      allMemories.push(...unique.slice(0, Math.ceil(limit / 3)));
+    }
+
+    // Sort by recency (newest first)
+    allMemories.sort((a, b) => b.updatedAt - a.updatedAt);
+
+    // Apply final limit
+    const limited = allMemories.slice(0, limit);
+
+    return {
+      memories: limited,
+      total: allMemories.length,
+    };
+  }
+
+  /**
+   * Record goal creation event
+   */
+  onGoalCreated(
+    goalId: string,
+    title: string,
+    description?: string,
+    conversationId?: string
+  ): void {
+    const now = Date.now();
+    this.addEpisodicMemory({
+      event: `Goal created: ${title}`,
+      timestamp: now,
+      context: {
+        what: `Created goal "${title}"${description ? `: ${description}` : ""}`,
+        when: now,
+        why: "New goal added to planning system",
+      },
+      conversationId,
+    });
+
+    // Also save as semantic memory for long-term reference
+    this.addSemanticMemory({
+      fact: `Goal: ${title}${description ? ` - ${description}` : ""}`,
+      category: "goal",
+      confidence: 1.0,
+      source: conversationId,
+    });
+  }
+
+  /**
+   * Record task creation event
+   */
+  onTaskCreated(
+    taskId: string,
+    title: string,
+    description?: string,
+    urgency?: string,
+    parentId?: string,
+    conversationId?: string
+  ): void {
+    const now = Date.now();
+    this.addEpisodicMemory({
+      event: `Task created: ${title}`,
+      timestamp: now,
+      context: {
+        what: `Created task "${title}"${description ? `: ${description}` : ""}`,
+        when: now,
+        why: urgency ? `Urgency: ${urgency}` : "New task added to planning system",
+      },
+      conversationId,
+    });
+  }
+
+  /**
+   * Record task completion event
+   */
+  onTaskCompleted(
+    taskId: string,
+    title: string,
+    result?: unknown,
+    executionTime?: number,
+    conversationId?: string
+  ): void {
+    const now = Date.now();
+    const resultSummary = result ? (typeof result === "string" ? result : JSON.stringify(result).slice(0, 100)) : "completed successfully";
+    const timeInfo = executionTime ? ` (took ${Math.round(executionTime / 1000)}s)` : "";
+
+    this.addEpisodicMemory({
+      event: `Task completed: ${title}`,
+      timestamp: now,
+      context: {
+        what: `Completed task "${title}"${timeInfo}`,
+        when: now,
+        why: resultSummary,
+      },
+      conversationId,
+    });
+
+    // Learn from successful task completion as procedural memory
+    this.addProceduralMemory({
+      pattern: title.toLowerCase(),
+      trigger: title,
+      action: `Complete task: ${title}`,
+      successRate: 1.0,
+      lastUsed: now,
+      useCount: 1,
+    });
+  }
+
+  /**
+   * Record task failure event
+   */
+  onTaskFailed(
+    taskId: string,
+    title: string,
+    error: string,
+    conversationId?: string
+  ): void {
+    const now = Date.now();
+    this.addEpisodicMemory({
+      event: `Task failed: ${title}`,
+      timestamp: now,
+      context: {
+        what: `Failed to complete task "${title}"`,
+        when: now,
+        why: error,
+      },
+      conversationId,
+    });
+
+    // Record emotional memory for frustration
+    this.addEmotionalMemory({
+      targetMemoryId: taskId,
+      targetMemoryType: "episodic",
+      tag: {
+        emotion: "frustration",
+        intensity: "medium",
+        timestamp: now,
+      },
+      context: `Task "${title}" failed with error: ${error}`,
+    });
+  }
+
+  /**
+   * Record step completion event
+   */
+  onStepCompleted(
+    taskId: string,
+    stepTitle: string,
+    stepOrder: number,
+    conversationId?: string
+  ): void {
+    const now = Date.now();
+    this.addEpisodicMemory({
+      event: `Step completed: ${stepTitle}`,
+      timestamp: now,
+      context: {
+        what: `Completed step ${stepOrder}: "${stepTitle}"`,
+        when: now,
+        why: `Part of task ${taskId}`,
+      },
+      conversationId,
+    });
+  }
+
+  /**
+   * Record step failure event
+   */
+  onStepFailed(
+    taskId: string,
+    stepTitle: string,
+    stepOrder: number,
+    error: string,
+    conversationId?: string
+  ): void {
+    const now = Date.now();
+    this.addEpisodicMemory({
+      event: `Step failed: ${stepTitle}`,
+      timestamp: now,
+      context: {
+        what: `Failed step ${stepOrder}: "${stepTitle}"`,
+        when: now,
+        why: error,
+      },
+      conversationId,
+    });
+  }
+
+  /**
+   * Record fallback strategy triggered event
+   */
+  onFallbackTriggered(
+    originalTaskId: string,
+    originalTaskTitle: string,
+    fallbackTaskId: string,
+    fallbackTaskTitle: string,
+    error: string,
+    conversationId?: string
+  ): void {
+    const now = Date.now();
+    this.addEpisodicMemory({
+      event: `Fallback triggered: ${fallbackTaskTitle}`,
+      timestamp: now,
+      context: {
+        what: `Created fallback task "${fallbackTaskTitle}" after "${originalTaskTitle}" failed`,
+        when: now,
+        why: error,
+      },
+      conversationId,
+    });
+
+    // Learn from fallback as procedural memory
+    this.addProceduralMemory({
+      pattern: originalTaskTitle.toLowerCase(),
+      trigger: `When "${originalTaskTitle}" fails`,
+      action: `Try fallback: ${fallbackTaskTitle}`,
+      successRate: 0.5, // Start with lower confidence
+      lastUsed: now,
+      useCount: 1,
+    });
+  }
+
+  /**
+   * Record goal completion event
+   */
+  onGoalCompleted(
+    goalId: string,
+    title: string,
+    conversationId?: string
+  ): void {
+    const now = Date.now();
+    this.addEpisodicMemory({
+      event: `Goal completed: ${title}`,
+      timestamp: now,
+      context: {
+        what: `Successfully completed goal "${title}"`,
+        when: now,
+        why: "All tasks completed",
+      },
+      conversationId,
+    });
+
+    // Update semantic memory with completion status
+    this.addSemanticMemory({
+      fact: `Completed goal: ${title}`,
+      category: "achievement",
+      confidence: 1.0,
+      source: conversationId,
+    });
+
+    // Record positive emotional memory
+    this.addEmotionalMemory({
+      targetMemoryId: goalId,
+      targetMemoryType: "episodic",
+      tag: {
+        emotion: "satisfaction",
+        intensity: "high",
+        timestamp: now,
+      },
+      context: `Successfully completed goal "${title}"`,
+    });
   }
 }

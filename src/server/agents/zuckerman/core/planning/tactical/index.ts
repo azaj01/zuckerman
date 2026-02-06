@@ -5,5 +5,6 @@
 
 export * from "./steps.js";
 export * from "./executor.js";
+export * from "./agent.js";
 
 export type { TaskStep } from "./steps.js";

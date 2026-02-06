@@ -14,6 +14,7 @@ import {
   resolveAgentHomedirDir,
 } from "@server/world/homedir/resolver.js";
 import { UnifiedMemoryManager } from "@server/agents/zuckerman/core/memory/manager.js";
+import type { SemanticMemory, EpisodicMemory, ProceduralMemory } from "@server/agents/zuckerman/core/memory/types.js";
 import { runSleepModeIfNeeded } from "@server/agents/zuckerman/sleep/index.js";
 import { activityRecorder } from "@server/world/activity/index.js";
 import { resolveMemorySearchConfig } from "@server/agents/zuckerman/core/memory/config.js";
@@ -50,6 +51,7 @@ export class ZuckermanAwareness implements AgentRuntime {
     });
     
     // Initialize planning manager WITH attention controller for bidirectional feedback
+    // Memory manager will be set later when initialized
     this.planningManager = new PlanningManager(this.agentId, this.attentionController);
     
     // Set bidirectional references
@@ -69,6 +71,8 @@ export class ZuckermanAwareness implements AgentRuntime {
   private initializeMemoryManager(homedirDir: string): void {
     if (!this.memoryManager) {
       this.memoryManager = UnifiedMemoryManager.create(homedirDir, this.agentId);
+      // Set memory manager in planning manager for memory integration
+      this.planningManager.setMemoryManager(this.memoryManager);
     }
   }
 
@@ -220,7 +224,7 @@ export class ZuckermanAwareness implements AgentRuntime {
           // Decompose steps for the confirmed task
           confirmedTaskSteps = await this.planningManager.decomposeTask(
             confirmationResult.newTask.title,
-            confirmationResult.newTask.urgency,
+            confirmationResult.newTask.urgency || "medium",
             attentionState?.focus || null
           );
 
@@ -334,13 +338,14 @@ export class ZuckermanAwareness implements AgentRuntime {
 
         // Add task to planning queue (skip if confirmed interruption - task already added)
         if (!isConfirmedInterruption) {
-          currentTaskId = this.planningManager.addTask({
-            title: message,
-            description: message,
-            type: "immediate",
-            source: "user",
-            urgency: attentionState.alerting.urgency,
-          });
+          currentTaskId = await this.planningManager.addGoalOrTask(
+            message,
+            message,
+            attentionState.alerting.urgency,
+            false, // isGoal = false (it's a task)
+            undefined, // parentId
+            conversationId // conversationId for memory integration
+          );
 
           // Process queue to start task execution (async - uses LLM for continuity assessment)
           // Pass original user message so confirmation uses exact wording
@@ -350,9 +355,9 @@ export class ZuckermanAwareness implements AgentRuntime {
         if (queueResult.type === "pending_interruption") {
           // Generate confirmation message using original user message
           const confirmationMessage = await this.planningManager.generateInterruptionConfirmation(
-            queueResult.interruption.currentTask,
+            queueResult.interruption.currentNode,
             queueResult.interruption.originalUserMessage,
-            queueResult.interruption.newTask.urgency
+            queueResult.interruption.newNode.urgency || "medium"
           );
 
           if (stream) {
@@ -372,9 +377,9 @@ export class ZuckermanAwareness implements AgentRuntime {
         }
 
           // Handle task execution
-          if (queueResult.type === "task" && queueResult.task) {
+          if (queueResult.type === "task" && queueResult.node) {
             // If this is the new task we just added, set steps
-            if (queueResult.task.id === currentTaskId) {
+            if (queueResult.node.id === currentTaskId) {
               // Set steps for the executor
               const executor = (this.planningManager as any).executor;
               if (executor && executor.setSteps) {
@@ -409,16 +414,9 @@ export class ZuckermanAwareness implements AgentRuntime {
         }
       }
 
-      // Get memory context using attention allocation
-      const retrievedMemoriesText = await this.getMemoryManager().getRelevantMemoryContext({
-        query: message,
-        types: ["semantic", "episodic", "procedural"],
-        limit: 100,
-      });
-
       // Prepare messages
       const messages: LLMMessage[] = [
-        { role: "system", content: systemPrompt + retrievedMemoriesText },
+        { role: "system", content: systemPrompt },
       ];
 
       // Load conversation history
@@ -433,8 +431,47 @@ export class ZuckermanAwareness implements AgentRuntime {
         }
       }
 
-      // Add current user message
-      messages.push({ role: "user", content: message });
+      // Get relevant memories for the question before answering
+      let relevantMemoriesText = "";
+      try {
+        const memoryResult = await this.getMemoryManager().getRelevantMemories(message, {
+          limit: 10,
+          types: ["semantic", "episodic", "procedural"],
+        });
+
+        if (memoryResult.memories.length > 0) {
+          const memoryParts = memoryResult.memories.map((mem) => {
+            switch (mem.type) {
+              case "semantic": {
+                const s = mem as SemanticMemory;
+                const prefix = s.category ? `${s.category}: ` : "";
+                return `[Semantic] ${prefix}${s.fact}`;
+              }
+              case "episodic": {
+                const e = mem as EpisodicMemory;
+                return `[Episodic] ${e.event}: ${e.context.what}`;
+              }
+              case "procedural": {
+                const p = mem as ProceduralMemory;
+                return `[Procedural] ${p.pattern}: ${p.action}`;
+              }
+              default:
+                return `[${mem.type}] ${JSON.stringify(mem)}`;
+            }
+          });
+
+          relevantMemoriesText = `\n\n## Relevant Memories\n${memoryParts.join("\n")}`;
+        }
+      } catch (memoryError) {
+        // Don't fail if memory retrieval fails
+        console.warn(`[ZuckermanRuntime] Memory retrieval failed:`, memoryError);
+      }
+
+      // Add current user message with relevant memories context
+      messages.push({ 
+        role: "user", 
+        content: relevantMemoriesText ? `${message}${relevantMemoriesText}` : message 
+      });
 
       // Process new message for memory extraction (real-time)
       // Note: Semantic memory is reloaded on every message in buildSystemPrompt(),
@@ -541,7 +578,7 @@ export class ZuckermanAwareness implements AgentRuntime {
       // Mark current task as failed if there is one
       const currentTask = this.planningManager.getCurrentTask();
       if (currentTask) {
-        this.planningManager.failCurrentTask(errorMessage);
+        await this.planningManager.failCurrentTask(errorMessage);
         
         // Emit queue update event
         if (stream) {
@@ -865,7 +902,7 @@ export class ZuckermanAwareness implements AgentRuntime {
 
           if (isSuccess) {
             // Complete current step on successful tool execution
-            this.planningManager.completeCurrentStep(result);
+            this.planningManager.completeCurrentStep(result, conversationId);
             
             // Stream step completion and progress
             if (stream) {
@@ -1022,7 +1059,7 @@ export class ZuckermanAwareness implements AgentRuntime {
       const currentTask = this.planningManager.getCurrentTask();
       if (currentTask) {
         const errorMessage = err instanceof Error ? err.message : String(err);
-        this.planningManager.failCurrentTask(errorMessage);
+        await this.planningManager.failCurrentTask(errorMessage);
         
         // Emit queue update event
         if (stream) {

@@ -9,11 +9,6 @@
 export type TaskUrgency = "low" | "medium" | "high" | "critical";
 
 /**
- * Task type
- */
-export type TaskType = "immediate" | "strategic" | "scheduled";
-
-/**
  * Task source
  */
 export type TaskSource = "user" | "prospective" | "self-generated";
@@ -24,36 +19,16 @@ export type TaskSource = "user" | "prospective" | "self-generated";
 export type TaskStatus = "pending" | "active" | "completed" | "cancelled" | "failed";
 
 /**
- * Task - Represents a single task
+ * Node type: goal or task
  */
-export interface Task {
-  id: string;
-  title: string;
-  description?: string;
-  type: TaskType;
-  source: TaskSource;
-  priority: number; // 0-1
-  urgency: TaskUrgency;
-  status: TaskStatus;
-  createdAt: number;
-  updatedAt: number;
-  dependencies?: string[]; // Task IDs that must complete first
-  metadata?: Record<string, unknown>; // Optional context
-  progress?: number; // 0-100, for active tasks
-  result?: unknown; // Execution result
-  error?: string; // Error message if failed
-  prospectiveMemoryId?: string; // Link to prospective memory if from that source
-}
+export type NodeType = "goal" | "task";
 
 /**
- * Task Queue - Manages task collection
+ * Goal status
  */
-export interface TaskQueue {
-  pending: Task[]; // Sorted by priority
-  active: Task | null; // Currently executing
-  completed: Task[]; // Recently completed (limited)
-  strategic: Task[]; // Long-term goals
-}
+export type GoalStatus = "active" | "completed" | "paused" | "cancelled";
+
+
 
 /**
  * Planning statistics
@@ -68,13 +43,14 @@ export interface PlanningStats {
 
 /**
  * Pending interruption - waiting for user confirmation
+ * UPDATED: Now uses GoalTaskNode instead of Task
  */
 export interface PendingInterruption {
-  currentTask: Task;
-  newTask: Task;
+  currentNode: GoalTaskNode;
+  newNode: GoalTaskNode;
   originalUserMessage: string; // Original user message (exact wording)
   assessment: {
-    continuityStrength: number;
+    continuityStrength?: number;
     shouldSwitch: boolean;
     reasoning: string;
   };
@@ -83,20 +59,93 @@ export interface PendingInterruption {
 }
 
 /**
+ * Unified Goal/Task Node
+ * Replaces both Task and separate Goal entities in tree structure
+ */
+export interface GoalTaskNode {
+  id: string;
+  type: NodeType;
+  title: string;
+  description?: string;
+  
+  // Goal-specific fields (only when type === "goal")
+  goalStatus?: GoalStatus;
+  targetDate?: number; // Optional deadline for goal
+  progress?: number; // 0-100, calculated from children
+  
+  // Task-specific fields (only when type === "task")
+  urgency?: TaskUrgency;
+  priority?: number; // 0-1
+  taskStatus?: TaskStatus;
+  
+  // Tree structure
+  parentId?: string; // Parent goal/task ID
+  children: GoalTaskNode[]; // Sub-goals or sub-tasks
+  order: number; // Execution order within parent
+  
+  // Common fields
+  source: TaskSource;
+  createdAt: number;
+  updatedAt: number;
+  
+  // Execution tracking
+  result?: unknown; // Execution result
+  error?: string; // Error message if failed
+  prospectiveMemoryId?: string; // Link to prospective memory
+  
+  // Metadata
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Goal-Task Tree
+ * Manages the entire tree structure
+ */
+export interface GoalTaskTree {
+  root: GoalTaskNode | null; // Root goal (top-level)
+  nodes: Map<string, GoalTaskNode>; // All nodes by ID for O(1) lookup
+  executionPath: string[]; // Ordered node IDs for execution (leaf tasks only)
+  activeNodeId: string | null; // Currently executing node ID
+}
+
+/**
+ * Decomposition Result
+ * Result of LLM-based goal decomposition
+ */
+export interface DecompositionResult {
+  parentNodeId: string;
+  children: GoalTaskNode[];
+  executionOrder: number[]; // Order indices for children
+}
+
+/**
+ * Execution Order Result
+ * Calculated execution order from tree traversal
+ */
+export interface ExecutionOrderResult {
+  path: string[]; // Ordered node IDs (leaf tasks only)
+  readyNodes: GoalTaskNode[]; // Nodes ready to execute (dependencies satisfied)
+  blockedNodes: GoalTaskNode[]; // Nodes blocked by dependencies
+}
+
+/**
  * Process queue result - can be task or pending interruption
+ * UPDATED: Now uses GoalTaskNode instead of Task
  */
 export type ProcessQueueResult = 
-  | { type: "task"; task: Task }
+  | { type: "task"; node: GoalTaskNode }
   | { type: "pending_interruption"; interruption: PendingInterruption }
-  | { type: "none"; task: null };
+  | { type: "none"; node: null };
 
 /**
  * Planning State - Overall planning state per agent
+ * UPDATED: Now uses tree instead of queue
  */
 export interface PlanningState {
   agentId: string;
-  queue: TaskQueue;
-  currentTask: Task | null;
+  tree: GoalTaskTree;
+  currentNode: GoalTaskNode | null;
   lastSwitched: number;
   stats: PlanningStats;
 }
+

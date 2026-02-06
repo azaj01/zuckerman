@@ -3,11 +3,12 @@
  * Manages step-by-step task execution
  */
 
-import type { Task } from "../types.js";
-import type { LLMMessage } from "@server/world/providers/llm/types.js";
-import { LLMManager } from "@server/world/providers/llm/index.js";
+import type { GoalTaskNode } from "../types.js";
 import type { UrgencyLevel } from "../../attention/types.js";
 import type { FocusState } from "../../attention/types.js";
+import { TacticalAgent } from "./agent.js";
+import { LLMManager } from "@server/world/providers/llm/index.js";
+import type { LLMMessage } from "@server/world/providers/llm/types.js";
 
 /**
  * Task step
@@ -28,10 +29,27 @@ export interface TaskStep {
  * Step sequence manager
  */
 export class StepSequenceManager {
+  private agent: TacticalAgent;
+
+  constructor() {
+    this.agent = new TacticalAgent();
+  }
+
   /**
    * Decompose task into steps using LLM
    */
   async decomposeWithLLM(
+    message: string,
+    urgency: UrgencyLevel,
+    focus: FocusState | null
+  ): Promise<TaskStep[]> {
+    return this.agent.decomposeTask(message, urgency, focus);
+  }
+
+  /**
+   * Legacy method - delegates to agent
+   */
+  async decomposeWithLLMLegacy(
     message: string,
     urgency: UrgencyLevel,
     focus: FocusState | null
@@ -147,7 +165,7 @@ Return ONLY valid JSON, no other text.`;
   /**
    * Create steps from task description (fallback)
    */
-  createSteps(task: Task): TaskStep[] {
+  createSteps(task: GoalTaskNode): TaskStep[] {
     const steps: TaskStep[] = [];
 
     if (task.description) {

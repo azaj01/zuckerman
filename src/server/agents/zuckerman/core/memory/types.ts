@@ -126,43 +126,126 @@ export interface MemoryRetrievalResult {
 
 /**
  * Memory manager interface
+ * Memory is managed internally through event-driven methods, not exposed as a database
  */
 export interface MemoryManager {
-  // Working memory
-  setWorkingMemory(conversationId: string, content: string, context?: Record<string, unknown>): void;
-  getWorkingMemory(conversationId: string): WorkingMemory | null;
-  clearWorkingMemory(conversationId: string): void;
-  
-  // Episodic memory
-  addEpisodicMemory(memory: Omit<EpisodicMemory, "id" | "type" | "createdAt" | "updatedAt">): string;
-  getEpisodicMemories(options?: MemoryRetrievalOptions): Promise<EpisodicMemory[]>;
-  
-  // Semantic memory
-  addSemanticMemory(memory: Omit<SemanticMemory, "id" | "type" | "createdAt" | "updatedAt">): string;
-  getSemanticMemories(options?: MemoryRetrievalOptions): Promise<SemanticMemory[]>;
-  
-  // Procedural memory
-  addProceduralMemory(memory: Omit<ProceduralMemory, "id" | "type" | "createdAt" | "updatedAt">): string;
-  getProceduralMemories(trigger?: string): Promise<ProceduralMemory[]>;
-  updateProceduralMemory(id: string, success: boolean): void;
-  
-  // Prospective memory
-  addProspectiveMemory(memory: Omit<ProspectiveMemory, "id" | "type" | "createdAt" | "updatedAt">): string;
-  getProspectiveMemories(options?: MemoryRetrievalOptions): Promise<ProspectiveMemory[]>;
-  triggerProspectiveMemory(id: string): void;
-  completeProspectiveMemory(id: string): void;
-  
-  // Emotional memory
-  addEmotionalMemory(memory: Omit<EmotionalMemory, "id" | "type" | "createdAt" | "updatedAt">): string;
-  getEmotionalMemories(targetMemoryId?: string): Promise<EmotionalMemory[]>;
-  
-  // Unified retrieval
-  retrieveMemories(options: MemoryRetrievalOptions): Promise<MemoryRetrievalResult>;
-  
-  // Memory formatting for prompts
-  getRelevantMemoryContext(options: MemoryRetrievalOptions): Promise<string>;
-  
-  // Cleanup
-  cleanup(): Promise<void>;
-  clearExpiredWorkingMemory(): void;
+  /**
+   * Process a new user message and extract/save important memories
+   * This is called by the runtime when a new user message arrives
+   */
+  onNewMessage(
+    userMessage: string,
+    conversationId?: string,
+    conversationContext?: string
+  ): Promise<void>;
+
+  /**
+   * Get relevant memories for a question/query
+   * Searches across semantic, episodic, and procedural memories to find relevant information
+   */
+  getRelevantMemories(
+    question: string,
+    options?: {
+      limit?: number;
+      types?: MemoryType[];
+    }
+  ): Promise<MemoryRetrievalResult>;
+
+  /**
+   * Save consolidated memories from sleep mode
+   * Creates structured episodic/semantic memories
+   */
+  saveConsolidatedMemories(
+    memories: Array<{
+      content: string;
+      type: "fact" | "preference" | "decision" | "event" | "learning";
+      importance: number;
+    }>,
+    conversationId?: string
+  ): void;
+
+  /**
+   * Record goal creation event
+   */
+  onGoalCreated(
+    goalId: string,
+    title: string,
+    description?: string,
+    conversationId?: string
+  ): void;
+
+  /**
+   * Record task creation event
+   */
+  onTaskCreated(
+    taskId: string,
+    title: string,
+    description?: string,
+    urgency?: string,
+    parentId?: string,
+    conversationId?: string
+  ): void;
+
+  /**
+   * Record task completion event
+   */
+  onTaskCompleted(
+    taskId: string,
+    title: string,
+    result?: unknown,
+    executionTime?: number,
+    conversationId?: string
+  ): void;
+
+  /**
+   * Record task failure event
+   */
+  onTaskFailed(
+    taskId: string,
+    title: string,
+    error: string,
+    conversationId?: string
+  ): void;
+
+  /**
+   * Record step completion event
+   */
+  onStepCompleted(
+    taskId: string,
+    stepTitle: string,
+    stepOrder: number,
+    conversationId?: string
+  ): void;
+
+  /**
+   * Record step failure event
+   */
+  onStepFailed(
+    taskId: string,
+    stepTitle: string,
+    stepOrder: number,
+    error: string,
+    conversationId?: string
+  ): void;
+
+  /**
+   * Record fallback strategy triggered event
+   */
+  onFallbackTriggered(
+    originalTaskId: string,
+    originalTaskTitle: string,
+    fallbackTaskId: string,
+    fallbackTaskTitle: string,
+    error: string,
+    conversationId?: string
+  ): void;
+
+  /**
+   * Record goal completion event
+   */
+  onGoalCompleted(
+    goalId: string,
+    title: string,
+    conversationId?: string
+  ): void;
 }

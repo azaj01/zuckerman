@@ -3,69 +3,40 @@
  * Handles fallback plans when tasks fail
  */
 
-import type { Task } from "../types.js";
-import { AlternativePlansManager, type AlternativePlan } from "./alternatives.js";
+import type { GoalTaskNode } from "../types.js";
+import { ContingencyAgent } from "./agent.js";
 
 /**
  * Fallback Strategy Manager
  */
 export class FallbackStrategyManager {
-  private alternativesManager: AlternativePlansManager;
+  private agent: ContingencyAgent;
 
   constructor() {
-    this.alternativesManager = new AlternativePlansManager();
+    this.agent = new ContingencyAgent();
   }
 
   /**
-   * Handle task failure - get fallback plan
+   * Handle task failure - get fallback plan using LLM
    */
-  handleFailure(task: Task, error: string): Task | null {
-    // Check if task has alternatives
-    const alternatives = this.alternativesManager.getAlternatives(task.id);
-    if (alternatives.length === 0) {
-      return null; // No fallback
-    }
-
-    // Get best alternative
-    const bestAlt = this.alternativesManager.getBestAlternative(task.id);
-    if (!bestAlt) {
-      return null;
-    }
-
-    // Create fallback task from alternative
-    const fallbackTask: Task = {
-      ...task,
-      id: `${task.id}-fallback-${Date.now()}`,
-      title: bestAlt.description,
-      description: `Fallback for: ${task.title}. Original error: ${error}`,
-      status: "pending",
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      metadata: {
-        ...task.metadata,
-        isFallback: true,
-        originalTaskId: task.id,
-        originalError: error,
-      },
-    };
-
-    return fallbackTask;
+  async handleFailure(task: GoalTaskNode, error: string): Promise<GoalTaskNode | null> {
+    const decision = await this.agent.handleFailure(task, error);
+    return decision.shouldCreateFallback ? decision.fallbackTask || null : null;
   }
 
   /**
-   * Register fallback plan for a task
+   * Register fallback plan for a task (legacy - LLM decides fallbacks now)
    */
   registerFallback(taskId: string, fallbackDescription: string, priority: number = 0.5): string {
-    return this.alternativesManager.addAlternative(taskId, {
-      description: fallbackDescription,
-      priority,
-    });
+    // Legacy method - LLM now decides fallbacks dynamically
+    return `${taskId}-fallback-registered`;
   }
 
   /**
-   * Check if task has fallback
+   * Check if task has fallback (legacy - LLM decides fallbacks now)
    */
   hasFallback(taskId: string): boolean {
-    return this.alternativesManager.hasAlternatives(taskId);
+    // Legacy method - LLM now decides fallbacks dynamically
+    return false;
   }
 }
