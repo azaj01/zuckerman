@@ -3,7 +3,7 @@ import type { AgentRuntime, AgentRunParams, AgentRunResult } from "@server/world
 import type { LLMTool } from "@server/world/providers/llm/types.js";
 import { loadConfig } from "@server/world/config/index.js";
 import { ConversationManager } from "@server/agents/zuckerman/conversations/index.js";
-import { ZuckermanToolRegistry } from "@server/agents/zuckerman/tools/registry.js";
+import { ToolRegistry } from "@server/agents/zuckerman/tools/registry.js";
 import { LLMManager } from "@server/world/providers/llm/index.js";
 import { IdentityLoader, type LoadedPrompts } from "../identity/identity-loader.js";
 import { agentDiscovery } from "@server/agents/discovery.js";
@@ -17,14 +17,16 @@ import { formatMemoriesForPrompt } from "../memory/prompt-formatter.js";
 import { ToolService } from "../../tools/index.js";
 import { StreamEventEmitter } from "@server/world/communication/stream-emitter.js";
 
-export class ZuckermanAwareness implements AgentRuntime {
+export class Awareness implements AgentRuntime {
   readonly agentId = "zuckerman";
   
   private identityLoader: IdentityLoader;
+  private memoryManager!: UnifiedMemoryManager;
+
   private llmManager: LLMManager;
   private conversationManager: ConversationManager;
-  private toolRegistry: ZuckermanToolRegistry;
-  private memoryManager!: UnifiedMemoryManager;
+  private toolRegistry: ToolRegistry;
+
   
   // Load prompts from agent's core directory (where markdown files are)
   private readonly agentDir: string;
@@ -32,7 +34,7 @@ export class ZuckermanAwareness implements AgentRuntime {
   constructor(conversationManager?: ConversationManager, llmManager?: LLMManager, identityLoader?: IdentityLoader) {
     this.conversationManager = conversationManager || new ConversationManager(this.agentId);
     // Initialize tool registry without conversationId - will be set per-run
-    this.toolRegistry = new ZuckermanToolRegistry();
+    this.toolRegistry = new ToolRegistry();
     this.llmManager = llmManager || LLMManager.getInstance();
     this.identityLoader = identityLoader || new IdentityLoader();
     
@@ -128,7 +130,7 @@ export class ZuckermanAwareness implements AgentRuntime {
       });
       context.relevantMemoriesText = formatMemoriesForPrompt(memoryResult);
     } catch (error) {
-      console.warn(`[ZuckermanAwareness] Memory retrieval failed:`, error);
+      console.warn(`[Awareness] Memory retrieval failed:`, error);
       context.relevantMemoriesText = "";
     }
 
@@ -148,7 +150,7 @@ export class ZuckermanAwareness implements AgentRuntime {
       context.conversationId,
       conversationContext
     ).catch(err => {
-      console.warn(`[ZuckermanAwareness] Failed to remember memories:`, err);
+      console.warn(`[Awareness] Failed to remember memories:`, err);
     });
 
     // Record agent run start
@@ -231,4 +233,4 @@ export class ZuckermanAwareness implements AgentRuntime {
 }
 
 // Backward compatibility
-export const ZuckermanRuntime = ZuckermanAwareness;
+export const ZuckermanRuntime = Awareness;

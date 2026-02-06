@@ -5,7 +5,7 @@ import type { ConversationState } from "@server/agents/zuckerman/conversations/t
 import type { UnifiedMemoryManager } from "../memory/manager.js";
 import type { LLMModel } from "@server/world/providers/llm/index.js";
 import type { StreamEventEmitter } from "@server/world/communication/stream-emitter.js";
-import type { ZuckermanToolRegistry } from "@server/agents/zuckerman/tools/registry.js";
+import type { ToolRegistry } from "@server/agents/zuckerman/tools/registry.js";
 
 /**
  * Execution context passed through stateless services
@@ -25,7 +25,7 @@ export interface RunContext {
   // Infrastructure
   homedir: string;
   memoryManager: UnifiedMemoryManager;
-  toolRegistry: ZuckermanToolRegistry;
+  toolRegistry: ToolRegistry;
   llmModel: LLMModel;
   streamEmitter: StreamEventEmitter;
   

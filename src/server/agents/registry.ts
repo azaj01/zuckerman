@@ -5,7 +5,7 @@
  * This replaces file system discovery with explicit imports.
  */
 
-import { ZuckermanAwareness } from "./zuckerman/core/awareness/runtime.js";
+import { Awareness } from "./zuckerman/core/awareness/runtime.js";
 import type { AgentRuntime } from "@server/world/runtime/agents/types.js";
 import { agentDiscovery } from "./discovery.js";
 
@@ -13,7 +13,7 @@ import { agentDiscovery } from "./discovery.js";
  * Agent registry mapping agent IDs to their runtime classes
  */
 export const AGENT_REGISTRY: Record<string, new (conversationManager?: any) => AgentRuntime> = {
-  zuckerman: ZuckermanAwareness,
+  zuckerman: Awareness,
 };
 
 // Register agent metadata (agentDir will be resolved automatically by discovery)

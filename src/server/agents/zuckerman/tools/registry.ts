@@ -12,7 +12,7 @@ import { createTextToSpeechTool } from "./voice/texttospeech/tool.js";
 import { createSpeechToTextTool } from "./voice/speechtotext/tool.js";
 import { createMouseTool } from "./mouse/index.js";
 
-export class ZuckermanToolRegistry {
+export class ToolRegistry {
   private tools = new Map<string, Tool>();
   private conversationId: string = "";
 

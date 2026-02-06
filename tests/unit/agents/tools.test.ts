@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { ZuckermanToolRegistry, createTerminalTool } from "@agents/zuckerman/tools/index.js";
+import { ToolRegistry, createTerminalTool } from "@agents/zuckerman/tools/index.js";
 
-describe("ZuckermanToolRegistry", () => {
+describe("ToolRegistry", () => {
   it("should register and retrieve tools", () => {
-    const registry = new ZuckermanToolRegistry();
+    const registry = new ToolRegistry();
     const tool = createTerminalTool();
 
     registry.register(tool);
@@ -14,7 +14,7 @@ describe("ZuckermanToolRegistry", () => {
   });
 
   it("should list all tools", () => {
-    const registry = new ZuckermanToolRegistry();
+    const registry = new ToolRegistry();
     const tools = registry.list();
 
     expect(tools.length).toBeGreaterThan(0);
@@ -22,7 +22,7 @@ describe("ZuckermanToolRegistry", () => {
   });
 
   it("should get tool definitions", () => {
-    const registry = new ZuckermanToolRegistry();
+    const registry = new ToolRegistry();
     const definitions = registry.getDefinitions();
 
     expect(definitions.length).toBeGreaterThan(0);
