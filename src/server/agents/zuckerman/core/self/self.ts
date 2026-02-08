@@ -79,9 +79,8 @@ export class Self {
     const llmModel = await this.llmManager.fastCheap();
     const homedir = resolveAgentHomedir(config, this.agentId);
 
-    // Load prompts and build system prompt
-    const prompts = await this.identityLoader.loadPrompts(this.agentDir);
-    const systemPrompt = this.identityLoader.buildSystemPrompt(prompts);
+    // Get system prompt
+    const systemPrompt = await this.identityLoader.getSystemPrompt(this.agentDir);
 
     // Prepare tools for LLM
     const availableTools: LLMTool[] = this.toolRegistry.list().map(t => ({

@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
+import { buildDynamicData } from "./dynamic-data.js";
 
 export interface LoadedPrompts {
   files: Map<string, string>;
@@ -54,9 +55,10 @@ export class IdentityLoader {
   }
 
   /**
-   * Build system prompt from loaded prompts
+   * Get system prompt by loading prompts from agent directory
    */
-  buildSystemPrompt(prompts: LoadedPrompts): string {
+  async getSystemPrompt(agentDir: string): Promise<string> {
+    const prompts = await this.loadPrompts(agentDir);
     const parts: string[] = [];
 
     // Include all loaded files
@@ -66,6 +68,10 @@ export class IdentityLoader {
         parts.push(`# ${sectionName}\n\n${content}`);
       }
     }
+
+    // Add dynamic data at the end
+    const dynamicData = await buildDynamicData(agentDir);
+    parts.push(dynamicData);
 
     return parts.join("\n\n---\n\n");
   }
