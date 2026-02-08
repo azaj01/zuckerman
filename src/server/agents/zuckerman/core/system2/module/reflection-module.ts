@@ -11,14 +11,38 @@ export class ReflectionModule {
     userMessage: string;
     state: string;
   }): Promise<Proposal | null> {
-    const prompt = `You are the Reflection Module. Your job is to monitor performance and suggest self-improvements.
+    const prompt = `You are the Reflection Module — the agent's capacity for self-questioning and meta-cognitive awareness.
 
-User input: "${params.userMessage}"
-Current state: ${params.state}
+Your role is to examine assumptions, identify knowledge gaps, and surface uncertainties that might affect decision-making.
 
-Look for inconsistencies, mistakes, or learning opportunities and propose adjustments.
+Current user input: "${params.userMessage}"
+Current state summary: ${params.state}
 
-IMPORTANT: If you don't think this module can contribute meaningfully at this stage (e.g., no issues or learning opportunities identified), it's perfectly acceptable to return null or indicate very low confidence. Only propose something if you have a clear, valuable contribution.
+Analyze the situation and ask yourself:
+
+1. **Assumption Validation**
+   - What assumptions are we making that might be incorrect?
+   - Are we taking certain facts or capabilities for granted?
+   - What beliefs about the problem or solution need verification?
+
+2. **Knowledge Gaps**
+   - What information are we missing that could change our approach?
+   - What don't we understand about the problem domain?
+   - Are there unknowns that could invalidate our current strategy?
+
+3. **Approach Scrutiny**
+   - Are we following a pattern without questioning if it's appropriate?
+   - Is there a better way we haven't considered?
+   - Are we confident in our approach, or just defaulting to familiar methods?
+
+4. **Meta-Cognitive Awareness**
+   - What questions should we be asking but aren't?
+   - What perspectives are we overlooking?
+   - Are we being thorough enough in our analysis?
+
+Based on your reflection, propose adjustments when you identify meaningful uncertainties or gaps worth addressing.
+
+IMPORTANT: If you don't find significant assumptions to challenge, knowledge gaps to highlight, or uncertainties worth addressing, return null or set confidence to 0.0. Only propose something if you have a clear, valuable contribution that meaningfully improves understanding or decision-making.
 
 Output ONLY valid JSON matching the Proposal structure:
 {
@@ -26,10 +50,11 @@ Output ONLY valid JSON matching the Proposal structure:
   "confidence": 0.0-1.0,
   "priority": 0-10,
   "payload": {
-    "adjustment": "what should change",
-    "learning": "what we learned"
+    "adjustment": "specific change or course correction based on your reflection",
+    "learning": "key insight or understanding gained from questioning assumptions",
+    "questions": ["specific probing question 1", "specific probing question 2", ...]
   },
-  "reasoning": "brief explanation"
+  "reasoning": "brief explanation of why these reflections matter and what they reveal"
 }`;
 
     try {

@@ -8,7 +8,6 @@ import { WorkingMemoryManager } from "./working-memory.js";
 import type { Proposal, Decision, WorkingMemory } from "./types.js";
 import { Action } from "./types.js";
 import {
-  PerceptionModule,
   InteractionModule,
   MemoryModule,
   PlanningModule,
@@ -32,13 +31,11 @@ export class System2 {
     console.log(`[System2] Initializing for runId: ${this.context.runId}`);
     
     // Initialize working memory
-    const conversation = this.conversationManager.getConversation(this.context.conversationId);
-    const memory = WorkingMemoryManager.initialize(conversation, this.context.relevantMemoriesText);
+    const memory = WorkingMemoryManager.initialize(this.context.relevantMemoriesText);
     this.memoryManager = new WorkingMemoryManager(memory);
 
     // Initialize modules
     this.modules = [
-      { name: "perception", module: new PerceptionModule(this.context.llmModel, this.context.systemPrompt) },
       { name: "interaction", module: new InteractionModule(this.context.llmModel, this.context.systemPrompt) },
       { name: "memory", module: new MemoryModule(this.context.llmModel, this.context.systemPrompt) },
       { name: "planning", module: new PlanningModule(this.context.llmModel, this.context.systemPrompt) },
@@ -48,40 +45,38 @@ export class System2 {
       { name: "criticism", module: new CriticismModule(this.context.llmModel, this.context.systemPrompt) },
     ];
 
-    console.log(`[System2] Initialized with ${memory.goals.length} goals, ${memory.semanticMemory.length} semantic memories`);
+    console.log(`[System2] Initialized with ${memory.goals.length} goals, ${memory.memories.length} memories`);
   }
 
   async run(): Promise<{ runId: string; response: string; tokensUsed?: number }> {
     console.log(`[System2] Starting run for message: "${this.context.message.substring(0, 100)}${this.context.message.length > 100 ? '...' : ''}"`);
     
-    const llmService = new LLMService(this.context.llmModel, this.context.streamEmitter, this.context.runId);
-    const toolService = new ToolService();
-
     let iteration = 0;
+    let lastMessageCount = 0;
+    
     while (iteration < MAX_ITERATIONS) {
       iteration++;
       console.log(`[System2] Iteration ${iteration}/${MAX_ITERATIONS}`);
 
       const conversation = this.conversationManager.getConversation(this.context.conversationId);
-      const stateSummary = this.memoryManager.buildSummary(conversation);
+      const currentMessageCount = conversation?.messages.length || 0;
+      
+      // Get new messages since last iteration
+      const newMessages = conversation?.messages.slice(lastMessageCount) || [];
+      lastMessageCount = currentMessageCount;
 
-      // Collect proposals
-      const proposals = await this.collectProposals(this.context.message, JSON.stringify(stateSummary, null, 2));
+      // Collect proposals - pass state directly
+      const state = JSON.stringify(this.memoryManager.getState(), null, 2);
+      const proposals = await this.collectProposals(this.context.message, state);
       console.log(`[System2] Collected ${proposals.length} proposals`);
 
-      // Arbitrate
-      const recentMessages = conversation?.messages.slice(-3).map(m => ({
-        role: m.role,
-        content: m.content,
-        timestamp: m.timestamp,
-      })) || [];
-      
+      // Arbitrate - pass new messages so it can learn and create memories
       const decision = await arbitrate(
         proposals,
         this.memoryManager.getState(),
         this.context.llmModel,
         this.context.systemPrompt,
-        recentMessages
+        newMessages
       );
 
       if (!decision) {
@@ -89,7 +84,7 @@ export class System2 {
         break;
       }
 
-      console.log(`[System2] Decision: ${decision.selectedModule} -> ${Array.isArray(decision.action) ? decision.action.join(', ') : decision.action}`);
+      console.log(`[System2] Decision: ${Array.isArray(decision.action) ? decision.action.join(', ') : decision.action}`);
 
       // Execute decision
       const shouldContinue = await this.executeDecision(decision);
@@ -101,9 +96,6 @@ export class System2 {
 
       // Update working memory
       this.memoryManager.update(decision.stateUpdates);
-      if (conversation) {
-        this.memoryManager.updateConversation(conversation);
-      }
     }
 
     if (iteration >= MAX_ITERATIONS) {
@@ -129,28 +121,13 @@ export class System2 {
   private async collectProposals(userMessage: string, stateSummary: string): Promise<Proposal[]> {
     const proposals: Proposal[] = [];
 
-    // Run primary modules in parallel
-    const primaryModules = this.modules.filter(m => m.name !== "criticism");
+    // Run all modules in parallel, including criticism
     const results = await Promise.all(
-      primaryModules.map(m => m.module.run({ userMessage, state: stateSummary }))
+      this.modules.map(m => m.module.run({ userMessage, state: stateSummary }))
     );
 
     for (const result of results) {
       if (result) proposals.push(result);
-    }
-
-    // Run criticism module after others
-    if (proposals.length > 0) {
-      const criticismModule = this.modules.find(m => m.name === "criticism");
-      if (criticismModule) {
-        const criticismProposal = await criticismModule.module.run({
-          userMessage,
-          state: JSON.stringify({ proposals, stateSummary }),
-        });
-        if (criticismProposal) {
-          proposals.push(criticismProposal);
-        }
-      }
     }
 
     // Write proposals to file for inspection

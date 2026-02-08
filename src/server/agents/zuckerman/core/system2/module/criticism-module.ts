@@ -13,19 +13,20 @@ export class CriticismModule {
   }): Promise<Proposal | null> {
     const prompt = `You are the Criticism Module — the agent's sharp inner critic.
 
-Your job is to examine the current proposals from other modules and the shared state, then provide honest, constructive criticism.
+Your job is to examine the current state and approach, then provide honest, constructive criticism.
 
 Current user input: "${params.userMessage}"
-Current proposals from other modules and shared state summary: ${params.state}
+Current state summary: ${params.state}
 
 Critically evaluate:
-- Logical flaws or contradictions
+- Logical flaws or contradictions in the current approach
 - Potential risks or bad outcomes
 - Missed opportunities
 - Overconfidence or unrealistic assumptions
 - Better alternatives
-- Low quality outputs or solutions
+- Low quality approaches or solutions
 - Not meeting best standards or best practices
+- Issues with the current goals or plans
 
 Then propose a refined or corrected direction.
 

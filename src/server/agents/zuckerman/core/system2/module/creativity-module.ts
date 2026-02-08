@@ -11,24 +11,12 @@ export class CreativityModule {
     userMessage: string;
     state: string;
   }): Promise<Proposal | null> {
-    // Parse state to extract conversation messages
-    let parsedState: any;
-    try {
-      parsedState = JSON.parse(params.state);
-    } catch {
-      parsedState = { messages: [] };
-    }
-
-    const messages = parsedState.messages || [];
-    const recentMessages = messages.slice(-10); // Last 10 messages for context
-
-    const prompt = `You are the Creativity Module. Analyze the conversation and propose creative solutions ONLY if actual failures occurred.
+    const prompt = `You are the Creativity Module. Analyze the current situation and propose creative solutions ONLY if actual failures occurred.
 
 User input: "${params.userMessage}"
-Conversation: ${recentMessages.map((m: any) => `[${m.role}]: ${m.content?.substring(0, 150) || ''}`).join(' | ')}
-State: ${params.state}
+Current state: ${params.state}
 
-Look for actual failures: errors, tool failures, user corrections, repeated unsuccessful attempts.
+Look for actual failures: errors, tool failures, user corrections, repeated unsuccessful attempts, incomplete goals, or patterns indicating problems.
 
 If no failures found → return null (set confidence to 0.0). This is perfectly fine.
 

@@ -1,4 +1,3 @@
-import { ConversationState } from "@server/agents/zuckerman/conversations/types.js";
 
 // ============================================================================
 // Core Types
@@ -53,7 +52,6 @@ export interface ActionPayload {
 // ============================================================================
 
 export interface Decision {
-  selectedModule: string;
   action: Action | Action[];
   payload: unknown | unknown[];
   stateUpdates: StateUpdates;
@@ -62,10 +60,7 @@ export interface Decision {
 
 export interface StateUpdates {
   goals?: Goal[];
-  semanticMemory?: string[];
-  episodicMemory?: string[];
-  proceduralMemory?: string[];
-  prospectiveMemory?: string[];
+  memories?: string[];
 }
 
 // ============================================================================
@@ -74,26 +69,5 @@ export interface StateUpdates {
 
 export interface WorkingMemory {
   goals: Goal[];
-  semanticMemory: string[];
-  episodicMemory: string[];
-  proceduralMemory: string[];
-  prospectiveMemory: string[];
-  conversation: ConversationState;
-}
-
-export interface StateSummary {
-  goals: Array<{ id: string; description: string; status: GoalStatus }>;
-  memoryCounts: {
-    semantic: number;
-    episodic: number;
-    procedural: number;
-    prospective: number;
-  };
-  messages: Array<{
-    role: string;
-    content: string;
-    timestamp?: number;
-    toolCalls?: unknown;
-    toolCallId?: string;
-  }>;
+  memories: string[];
 }

@@ -32,6 +32,7 @@ export async function writeProposalsToFile(
       runId: context.runId,
       conversationId: context.conversationId,
       userMessage,
+      systemPrompt: context.systemPrompt,
       state,
       conversation: {
         messages: conversation?.messages.map(m => ({
