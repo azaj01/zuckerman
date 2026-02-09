@@ -20,7 +20,7 @@ export interface WorkingMemory {
 export interface BrainPart {
   id: string;
   name: string;
-  prompt: string;
+  getPrompt: (goal: string, workingMemory: string[], historyText: string) => string;
 }
 
 export interface BrainGoal {

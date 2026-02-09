@@ -103,13 +103,22 @@ export class System2 {
 
       console.log(`[System2] Activating ${brainPart.name} with goal: ${goal.description}`);
 
+      // Format history text for brain part
+      const historyText = executionHistory.length > 0
+        ? (() => {
+            const lastExec = executionHistory[executionHistory.length - 1];
+            return `Last Brain Part Execution:\n${lastExec.brainPartName} (${lastExec.brainPartId})\nGoal: ${lastExec.goal}\nCompleted: ${lastExec.completed}\nResult: ${lastExec.result.substring(0, 300)}${lastExec.result.length > 300 ? '...' : ''}\nTool calls: ${lastExec.toolCallsMade}`;
+          })()
+        : "Last Brain Part Execution: (none yet)";
+
       // Run brain module with working memory
       const brainModule = new BrainModule(
         this.conversationManager,
         this.context,
         brainPart,
         goal,
-        workingMemoryManager
+        workingMemoryManager,
+        historyText
       );
 
       console.log(`[System2] Running ${brainPart.name} (${brainPart.id})...`);
@@ -192,7 +201,13 @@ export class System2 {
         })()
       : "Last Brain Part Execution: (none yet)";
 
-    const decisionPrompt = `You are the Self - the central decision maker of System2. Your role is to decide which brain part should work next and what goal it should pursue.
+    const decisionPrompt = `You are the Self - the central decision maker of System2, a brain part of Zuckerman - an autonomous AI agent that acts freely and independently to accomplish tasks.
+
+CONTEXT: Zuckerman is an AI agent that operates completely independently. It has no human assistance and must rely entirely on its own capabilities, tools, and reasoning. As part of Zuckerman's brain, you coordinate the various brain modules (Planning, Execution, Research, Reflection, etc.) to help accomplish user requests autonomously.
+
+Your role is to decide which brain part should work next and what goal it should pursue.
+
+IMPORTANT: You are operating completely independently. There is no one else who can help you - you must rely entirely on your own capabilities, tools, and reasoning. All decisions and actions must be made by you alone.
 
 Available brain parts:
 ${brainPartsList}
@@ -207,6 +222,18 @@ Analyze the current state and decide:
 3. What specific goal should that brain part pursue?
 
 Consider what has been done before and what still needs to be accomplished based on the execution history.
+
+Guidance for brain part selection:
+- Use "research" when you need to find solutions, alternatives, or information from online sources (Google, Stack Overflow, GitHub, documentation, etc.)
+- Use "planning" when you need to break down complex goals into steps
+- Use "execution" when you have a clear task to perform
+- Use "reflection" when you need to analyze past actions and outcomes
+- Use "criticism" when you need to evaluate work or plans
+- Use "memory" when you need to store or retrieve information
+- Use "creativity" when you need novel ideas or approaches
+- Use "attention" when you need to focus on what's important
+- Use "interaction" when you need to communicate with users or systems
+- Use "error-handling" when you encounter errors or obstacles
 
 Respond in JSON format:
 {
@@ -275,7 +302,13 @@ Respond in JSON format:
       ? `Current working memory:\n${currentMemory.memories.map((m, i) => `${i + 1}. ${m}`).join("\n")}`
       : "Current working memory: (empty)";
 
-    const memoryPrompt = `You are the Self - the central decision maker of System2. Your role is to decide what important information should be remembered in working memory.
+    const memoryPrompt = `You are the Self - the central decision maker of System2, a brain part of Zuckerman - an autonomous AI agent that acts freely and independently to accomplish tasks.
+
+CONTEXT: Zuckerman is an AI agent that operates completely independently. It has no human assistance and must rely entirely on its own capabilities, tools, and reasoning. As part of Zuckerman's brain, you coordinate the various brain modules to help accomplish user requests autonomously.
+
+Your role is to decide what important information should be remembered in working memory.
+
+IMPORTANT: You are operating completely independently. There is no one else who can help you - you must rely entirely on your own capabilities, tools, and reasoning. All decisions and actions must be made by you alone.
 
 ${currentMemoryText}
 

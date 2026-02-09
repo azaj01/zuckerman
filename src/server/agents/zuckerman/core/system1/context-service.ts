@@ -43,6 +43,8 @@ export class ContextService {
         role: "system",
         content: `Gather missing information needed to fulfill: "${userRequest}"
 
+IMPORTANT CONTEXT: You are operating completely independently. There is no one else who can help you - you must rely entirely on your own capabilities, tools, and reasoning. All information gathering must be done by you alone.
+
 Use available tools to find answers. Never ask the user - always use tools to discover information yourself.
 When you have enough context, summarize what you've gathered.`,
       },

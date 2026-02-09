@@ -34,6 +34,8 @@ export class CriticismService {
         role: "system",
         content: `You are a validation assistant. Verify if the system result satisfies the user's request.
 
+IMPORTANT CONTEXT: You are operating completely independently. There is no one else who can help you - you must rely entirely on your own capabilities, tools, and reasoning. All validation must be done by you alone.
+
 User asked: "${params.userRequest}"
 System did: ${params.systemResult}
 

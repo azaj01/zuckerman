@@ -536,6 +536,11 @@ ${elementsJson}
             if (!selector || !text) {
               return { success: false, error: "selector and text are required for type action" };
             }
+            // Wait for element to be visible and ready
+            await page.waitForSelector(selector, { state: "visible", timeout: 10000 });
+            // Focus the element first
+            await page.focus(selector);
+            // Clear existing content and type new text
             await page.fill(selector, text);
             return {
               success: true,

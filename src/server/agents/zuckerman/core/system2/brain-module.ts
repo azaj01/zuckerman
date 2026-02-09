@@ -17,7 +17,8 @@ export class BrainModule {
     private context: RunContext,
     private brainPart: BrainPart,
     private goal: BrainGoal,
-    private workingMemoryManager: WorkingMemoryManager
+    private workingMemoryManager: WorkingMemoryManager,
+    private historyText: string
   ) {}
 
   async run(): Promise<BrainModuleResult> {
@@ -46,14 +47,11 @@ export class BrainModule {
       
       // Get current working memory
       const workingMemory = this.workingMemoryManager.getState();
-      const workingMemoryText = workingMemory.memories.length > 0
-        ? `\n\nWorking Memory (available context):\n${workingMemory.memories.map((m, i) => `${i + 1}. ${m}`).join("\n")}`
-        : "\n\nWorking Memory: (empty)";
       
-      // Build messages with brain part prompt + working memory as system prompt
-      const enhancedPrompt = `${this.brainPart.prompt}${workingMemoryText}`;
+      // Build messages with brain part prompt (generated with goal, working memory, and history)
+      const brainPartPrompt = this.brainPart.getPrompt(this.goal.description, workingMemory.memories, this.historyText);
       const messages = [
-        { role: "system" as const, content: enhancedPrompt },
+        { role: "system" as const, content: brainPartPrompt },
         ...llmService.buildMessages(this.context, conversation).slice(1) // Skip original system prompt
       ];
 

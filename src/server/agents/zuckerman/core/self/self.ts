@@ -169,7 +169,11 @@ export class Self {
     const conversation = this.conversationManager.getConversation(context.conversationId);
     const conversationContext = conversation?.messages.slice(-3).map(m => `${m.role}: ${m.content}`).join("\n") || "No previous messages";
     
-    const systemSelectionPrompt = `You are a routing system that determines which processing system should handle a user message.
+    const systemSelectionPrompt = `You are the Self - the central coordinator of Zuckerman, an autonomous AI agent that acts freely and independently to accomplish tasks.
+
+CONTEXT: Zuckerman is an AI agent that operates completely independently. It has no human assistance and must rely entirely on its own capabilities, tools, and reasoning. Your role is to determine which processing system should handle a user message.
+
+IMPORTANT: You are operating completely independently. There is no one else who can help you - you must rely entirely on your own capabilities, tools, and reasoning. All decisions must be made by you alone.
 
 System 1: Fast, intuitive, reactive processing. Use for:
 - Simple questions and answers
