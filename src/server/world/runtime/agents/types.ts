@@ -3,35 +3,10 @@ import type { SecurityContext } from "@server/world/execution/security/types.js"
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
-export interface StreamEvent {
-  type: "lifecycle" | "token" | "tool.call" | "tool.result" | "thinking" | "done";
-  data: {
-    phase?: "start" | "end" | "error";
-    error?: string;
-    token?: string;
-    tool?: string;
-    toolArgs?: Record<string, unknown>;
-    toolResult?: unknown;
-    thinking?: string;
-    runId?: string;
-    tokensUsed?: number;
-    toolsUsed?: string[];
-    response?: string;
-    // Additional context fields
-    message?: string;
-    timestamp?: number;
-  };
-}
-
-export type StreamCallback = (event: StreamEvent) => void | Promise<void>;
-
 export interface AgentRunParams {
+  runId?: string;
   conversationId: ConversationId;
   message: string;
-  thinkingLevel?: ThinkingLevel;
-  temperature?: number;
-  securityContext: SecurityContext;
-  stream?: StreamCallback;
   /**
    * Channel metadata for tool access (optional, set by world when routing from channels)
    */
@@ -40,6 +15,24 @@ export interface AgentRunParams {
     to?: string;
     accountId?: string;
   };
+  /**
+   * Conversation context for memory (optional, extracted from conversation messages)
+   */
+  conversationContext?: string;
+  /**
+   * Conversation messages (optional, provided by agent service)
+   */
+  conversationMessages?: Array<{
+    role: "user" | "assistant" | "system" | "tool";
+    content: string;
+    timestamp: number;
+    toolCallId?: string;
+    toolCalls?: Array<{
+      id: string;
+      name: string;
+      arguments: string;
+    }>;
+  }>;
 }
 
 export interface AgentRunResult {

@@ -1,8 +1,8 @@
 import type { BrainPart } from "./types.js";
 
-const COMMON_CONTEXT = `CONTEXT: You ARE Zuckerman. You are an autonomous AI agent operating completely independently. You have no human assistance and must rely entirely on your own capabilities, tools, and reasoning. You are thinking and acting for yourself - not offering solutions to someone else, but actually doing the work yourself. As part of your own brain, you work alongside other modules (Planning, Execution, Research, Reflection, etc.) to accomplish what you need to do.`;
+const COMMON_CONTEXT = `You are Zuckerman - an autonomous AI agent operating independently. You work alongside other brain modules (Planning, Execution, Research, Reflection, etc.) to accomplish tasks.`;
 
-const COMMON_IMPORTANT = `IMPORTANT: You ARE Zuckerman. You are operating completely independently. There is no one else who can help you - you must rely entirely on your own capabilities, tools, and reasoning. All work must be done by you alone. Think and act FOR YOURSELF - not as an assistant offering solutions, but as an autonomous agent doing the work. Pay attention to what you have and what you don't have - if you don't have money, API keys, permissions, etc, you need to think how you operate without them, or how you can get them.`;
+const COMMON_IMPORTANT = `You operate completely independently. Think and act for yourself - not as an assistant offering solutions, but as an autonomous agent doing the work. Pay attention to what you have and what you don't have.`;
 
 function formatMemoryText(workingMemory: string[], label: string = "Working Memory (available context)"): string {
   return workingMemory.length > 0
@@ -10,7 +10,7 @@ function formatMemoryText(workingMemory: string[], label: string = "Working Memo
     : "";
 }
 
-export const BRAIN_PARTS: BrainPart[] = [
+export const SYSTEM2_BRAIN_PARTS: BrainPart[] = [
   {
     id: "planning",
     name: "Planning Module",
@@ -314,5 +314,5 @@ DO NOT execute the task. DO NOT search for the actual data. Research the TOOLS/M
 ];
 
 export function getBrainPart(id: string): BrainPart | undefined {
-  return BRAIN_PARTS.find(part => part.id === id);
+  return SYSTEM2_BRAIN_PARTS.find((part) => part.id === id);
 }

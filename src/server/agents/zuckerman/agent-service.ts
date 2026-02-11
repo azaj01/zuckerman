@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { AgentRuntime, AgentRunParams, AgentRunResult } from "@server/world/runtime/agents/types.js";
 import type { ConversationId, ConversationState, Conversation, ConversationKey, ConversationType, ConversationLabel } from "./conversations/types.js";
 import { ConversationManager } from "./conversations/index.js";
@@ -5,6 +6,20 @@ import { ConversationRouter } from "./conversations/router.js";
 import { Self } from "./core/self/self.js";
 import { IdentityLoader } from "./core/identity/identity-loader.js";
 import { agentDiscovery } from "@server/agents/discovery.js";
+import type {
+  AgentEvent,
+  SpeakEvent,
+  WriteEvent,
+  ThinkEvent,
+  RememberEvent,
+  ActEvent,
+  LearnEvent,
+  StreamTokenEvent,
+  StreamLifecycleEvent,
+  StreamToolCallEvent,
+  StreamToolResultEvent,
+} from "./core/self/events.js";
+import { activityRecorder } from "./activity/index.js";
 
 /**
  * Public API for Zuckerman agent
@@ -25,7 +40,7 @@ export class AgentService implements AgentRuntime {
     // AgentService always creates its own ConversationManager internally
     this.conversationManager = new ConversationManager(this.agentId);
     this.conversationRouter = new ConversationRouter(this.agentId, this.conversationManager);
-    this.runtime = new Self(this.agentId, this.conversationManager);
+    this.runtime = new Self(this.agentId);
     this.identityLoader = new IdentityLoader();
     
     // Get agent directory from discovery service
@@ -34,6 +49,104 @@ export class AgentService implements AgentRuntime {
       throw new Error(`Agent "${this.agentId}" not found in discovery service`);
     }
     this.agentDir = metadata.agentDir;
+
+    // Setup event handlers
+    this.setupEventHandlers();
+  }
+
+  /**
+   * Setup event handlers that route events to conversation manager and other services
+   */
+  private setupEventHandlers(): void {
+    this.runtime.on("speak", async (event: SpeakEvent) => {
+      const runId = event.runId || randomUUID();
+      await this.conversationManager.addMessage(event.conversationId, "assistant", event.message, { runId });
+    });
+
+    this.runtime.on("write", async (event: WriteEvent) => {
+      const runId = event.runId || randomUUID();
+      await this.conversationManager.addMessage(event.conversationId, "assistant", event.content, { runId });
+    });
+
+    this.runtime.on("think", async (event: ThinkEvent) => {
+      const runId = event.runId || randomUUID();
+      await this.conversationManager.addMessage(event.conversationId, "system", `Thinking: ${event.thought}`, { runId });
+    });
+
+    this.runtime.on("remember", async (event: RememberEvent) => {
+      console.log(`[AgentService] Remembering: ${event.memory}`);
+      // Could store in memory system
+    });
+
+    this.runtime.on("act", async (event: ActEvent) => {
+      console.log(`[AgentService] Acting: ${event.action}`);
+    });
+
+    this.runtime.on("learn", async (event: LearnEvent) => {
+      console.log(`[AgentService] Learning: ${event.knowledge}`);
+      // Could store in memory system
+    });
+
+    // Streaming events
+    this.runtime.on("stream.token", async (event: StreamTokenEvent) => {
+      // Handle token streaming if needed
+    });
+
+    this.runtime.on("stream.lifecycle", async (event: StreamLifecycleEvent) => {
+      if (event.phase === "start" && event.message) {
+        await activityRecorder.recordAgentRunStart(
+          this.agentId,
+          event.conversationId,
+          event.runId,
+          event.message
+        ).catch(err => console.warn(`[AgentService] Failed to record run start:`, err));
+      } else if (event.phase === "end") {
+        // Get response from conversation messages
+        const conversation = this.conversationManager.getConversation(event.conversationId);
+        const lastMessage = conversation?.messages
+          .filter(m => m.role === "assistant")
+          .pop();
+        const response = lastMessage?.content || "";
+        
+        await activityRecorder.recordAgentRunComplete(
+          this.agentId,
+          event.conversationId,
+          event.runId,
+          response,
+          event.tokensUsed,
+          event.toolsUsed
+        ).catch(err => console.warn(`[AgentService] Failed to record run complete:`, err));
+      } else if (event.phase === "error" && event.error) {
+        await activityRecorder.recordAgentRunError(
+          this.agentId,
+          event.conversationId,
+          event.runId,
+          event.error
+        ).catch(err => console.warn(`[AgentService] Failed to record run error:`, err));
+      }
+    });
+
+    this.runtime.on("stream.tool.call", async (event: StreamToolCallEvent) => {
+      // Tool call events are handled
+    });
+
+    this.runtime.on("stream.tool.result", async (event: StreamToolResultEvent) => {
+      // Tool result events are handled
+    });
+  }
+
+  /**
+   * Register an event handler
+   */
+  on<T extends AgentEvent>(eventType: T["type"], handler: (event: T) => void | Promise<void>): () => void {
+    return this.runtime.on(eventType, handler);
+  }
+
+  /**
+   * Emit an event to the runtime
+   */
+  async emit(event: AgentEvent): Promise<void> {
+    await this.runtime.emit(event);
   }
 
   /**
@@ -47,7 +160,25 @@ export class AgentService implements AgentRuntime {
    * Run the agent with given parameters
    */
   async run(params: AgentRunParams): Promise<AgentRunResult> {
-    return this.runtime.run(params);
+    const { conversationId, message } = params;
+    const runId = params.runId || randomUUID();
+    
+    if (params.channelMetadata) {
+      await this.conversationManager.updateChannelMetadata(conversationId, params.channelMetadata);
+    }
+    await this.conversationManager.addMessage(conversationId, "user", message, { runId });
+    
+    // Get conversation state for context and messages
+    const conversation = this.conversationManager.getConversation(conversationId);
+    const conversationContext = conversation?.messages.slice(-3).map(m => m.content).join("\n") || "";
+    const conversationMessages = conversation?.messages || [];
+    
+    return await this.runtime.run({ 
+      ...params, 
+      runId, 
+      conversationContext,
+      conversationMessages
+    });
   }
 
   /**

@@ -64,9 +64,3 @@ export function convertToModelMessages(
     });
 }
 
-/**
- * Convert ToolRegistry Map to AI SDK tools Record
- */
-export function convertToAITools(toolsMap: Map<string, Tool>): Record<string, Tool> {
-  return Object.fromEntries(toolsMap);
-}

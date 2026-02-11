@@ -88,7 +88,6 @@ export async function initializeChannels(
         const result = await runtime.run({
           conversationId: route.conversationId,
           message: formattedMessage,
-          securityContext,
           channelMetadata: {
             channel: "whatsapp",
             to: message.from,
@@ -200,7 +199,6 @@ export async function initializeChannels(
         const result = await runtime.run({
           conversationId: route.conversationId,
           message: formattedMessage,
-          securityContext,
           channelMetadata: {
             channel: channelId,
             to: message.from,

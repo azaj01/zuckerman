@@ -5,10 +5,10 @@ import { agentDiscovery } from "@server/agents/discovery.js";
 import { loadConfig } from "@server/world/config/index.js";
 import { resolveSecurityContext } from "@server/world/execution/security/context/index.js";
 import { resolveAgentHomedir } from "@server/world/communication/routing/resolver.js";
-import type { StreamEvent } from "@server/world/runtime/agents/types.js";
 import { sendEvent } from "../connection.js";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { AgentEvent } from "@server/agents/zuckerman/core/self/events.js";
 
 export function createAgentHandlers(
   agentFactory: AgentRuntimeFactory,
@@ -151,33 +151,43 @@ export function createAgentHandlers(
 
         // Note: Runtime now handles persisting user message internally
 
-        // Create streaming callback to emit events
-        const streamCallback = async (event: StreamEvent) => {
-          // Emit event to the client
+        // Setup event listener to forward agent events to client
+        const eventHandler = async (event: AgentEvent) => {
           try {
-            // Emit standard stream event
-            sendEvent(client.socket, {
-              type: "event",
-              event: `agent.stream.${event.type}`,
-              payload: {
-                ...event.data,
-                conversationId: actualConversationId,
-              },
-            });
+            // Map agent events to gateway events
+            if (event.type.startsWith("stream.")) {
+              const streamType = event.type.replace("stream.", "");
+              sendEvent(client.socket, {
+                type: "event",
+                event: `agent.stream.${streamType}`,
+                payload: {
+                  ...event,
+                  conversationId: actualConversationId,
+                },
+              });
+            }
           } catch (err) {
-            console.error(`[AgentHandler] Error sending stream event:`, err);
+            console.error(`[AgentHandler] Error sending event:`, err);
           }
         };
 
-        // Pass security context to runtime (use actualConversationId)
+        // Register event handlers if runtime supports it
+        const unsubscribers: Array<() => void> = [];
+        if (typeof (runtime as any).on === "function") {
+          unsubscribers.push((runtime as any).on("stream.token", eventHandler));
+          unsubscribers.push((runtime as any).on("stream.lifecycle", eventHandler));
+          unsubscribers.push((runtime as any).on("stream.tool.call", eventHandler));
+          unsubscribers.push((runtime as any).on("stream.tool.result", eventHandler));
+        }
+
+        // Run agent (use actualConversationId)
         const result = await runtime.run({
           conversationId: actualConversationId,
           message,
-          thinkingLevel: thinkingLevel as any,
-          temperature,
-          securityContext,
-          stream: streamCallback,
         });
+
+        // Unsubscribe from events
+        unsubscribers.forEach(unsub => unsub());
 
         // Note: Runtime now handles persisting assistant response and all messages
 
