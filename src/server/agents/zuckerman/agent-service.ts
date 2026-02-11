@@ -8,7 +8,6 @@ import { IdentityLoader } from "./core/identity/identity-loader.js";
 import { agentDiscovery } from "@server/agents/discovery.js";
 import type {
   AgentEvent,
-  SpeakEvent,
   WriteEvent,
   ThinkEvent,
   RememberEvent,
@@ -58,19 +57,13 @@ export class AgentService implements AgentRuntime {
    * Setup event handlers that route events to conversation manager and other services
    */
   private setupEventHandlers(): void {
-    this.runtime.on("speak", async (event: SpeakEvent) => {
-      const runId = event.runId || randomUUID();
-      await this.conversationManager.addMessage(event.conversationId, "assistant", event.message, { runId });
-    });
-
     this.runtime.on("write", async (event: WriteEvent) => {
       const runId = event.runId || randomUUID();
-      await this.conversationManager.addMessage(event.conversationId, "assistant", event.content, { runId });
+      await this.conversationManager.addMessage(event.conversationId, event.role, event.content, { runId });
     });
 
     this.runtime.on("think", async (event: ThinkEvent) => {
-      const runId = event.runId || randomUUID();
-      await this.conversationManager.addMessage(event.conversationId, "system", `Thinking: ${event.thought}`, { runId });
+      // Think events are internal - don't add to conversation
     });
 
     this.runtime.on("remember", async (event: RememberEvent) => {
@@ -106,7 +99,15 @@ export class AgentService implements AgentRuntime {
         const lastMessage = conversation?.messages
           .filter(m => m.role === "assistant")
           .pop();
-        const response = lastMessage?.content || "";
+        // Extract string content from ConversationContent
+        const response = typeof lastMessage?.content === "string" 
+          ? lastMessage.content 
+          : Array.isArray(lastMessage?.content)
+            ? lastMessage.content
+              .filter((part: any) => part.type === "text")
+              .map((part: any) => part.text)
+              .join("")
+            : "";
         
         await activityRecorder.recordAgentRunComplete(
           this.agentId,
@@ -127,7 +128,13 @@ export class AgentService implements AgentRuntime {
     });
 
     this.runtime.on("stream.tool.call", async (event: StreamToolCallEvent) => {
-      // Tool call events are handled
+      await activityRecorder.recordToolCall(
+        this.agentId,
+        event.conversationId,
+        event.runId,
+        event.tool,
+        event.toolArgs
+      ).catch(err => console.warn(`[AgentService] Failed to record tool call:`, err));
     });
 
     this.runtime.on("stream.tool.result", async (event: StreamToolResultEvent) => {
@@ -168,15 +175,13 @@ export class AgentService implements AgentRuntime {
     }
     await this.conversationManager.addMessage(conversationId, "user", message, { runId });
     
-    // Get conversation state for context and messages
+    // Get conversation messages
     const conversation = this.conversationManager.getConversation(conversationId);
-    const conversationContext = conversation?.messages.slice(-3).map(m => m.content).join("\n") || "";
     const conversationMessages = conversation?.messages || [];
     
     return await this.runtime.run({ 
       ...params, 
       runId, 
-      conversationContext,
       conversationMessages
     });
   }

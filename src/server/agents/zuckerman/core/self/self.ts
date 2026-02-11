@@ -6,7 +6,7 @@ import { UnifiedMemoryManager } from "@server/agents/zuckerman/core/memory/manag
 import { resolveMemorySearchConfig } from "@server/agents/zuckerman/core/memory/config.js";
 import { CoreSystem } from "./core-system.js";
 import type { AgentEvent } from "./events.js";
-import { activityRecorder } from "@server/agents/zuckerman/activity/index.js";
+import type { ConversationMessage } from "@server/agents/zuckerman/conversations/types.js";
 
 export type EventHandler<T extends AgentEvent = AgentEvent> = (event: T) => void | Promise<void>;
 
@@ -38,27 +38,16 @@ export class Self {
   }
 
   async run(params: AgentRunParams): Promise<AgentRunResult> {
-    const { conversationId, message } = params;
-    const runId = params.runId!;
-
-    if (params.conversationContext) {
-      await this.rememberMessage(message, conversationId, params.conversationContext);
-    }
+    const { conversationId, message, runId = randomUUID() } = params;
 
     try {
       const coreSystem = new CoreSystem(this.agentId, (event) => this.emit(event));
-      const conversationMessages = params.conversationMessages || [];
-      const result = await coreSystem.run(
+      return await coreSystem.run(
         runId,
         conversationId,
         message,
-        conversationMessages
+        params.conversationMessages || []
       );
-      return {
-        runId: result.runId,
-        response: result.response,
-        tokensUsed: result.tokensUsed,
-      };
     } catch (err) {
       await this.emit({
         type: "stream.lifecycle",
@@ -71,11 +60,6 @@ export class Self {
     }
   }
 
-  private async rememberMessage(message: string, conversationId: string, context: string): Promise<void> {
-    this.memoryManager.onNewMessage(message, conversationId, context)
-      .catch(err => console.warn(`[Self] Failed to remember memories:`, err));
-  }
-
   /**
    * Register an event handler for a specific event type
    */
@@ -83,11 +67,9 @@ export class Self {
     if (!this.eventHandlers.has(eventType)) {
       this.eventHandlers.set(eventType, new Set());
     }
-    this.eventHandlers.get(eventType)!.add(handler as EventHandler);
-
-    return () => {
-      this.eventHandlers.get(eventType)?.delete(handler as EventHandler);
-    };
+    const handlers = this.eventHandlers.get(eventType)!;
+    handlers.add(handler as EventHandler);
+    return () => handlers.delete(handler as EventHandler);
   }
 
   /**

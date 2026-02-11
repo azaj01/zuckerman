@@ -1,66 +1,56 @@
-import type { ModelMessage, Tool } from "ai";
-import type { ConversationMessage } from "@server/agents/zuckerman/conversations/types.js";
+import type { ModelMessage } from "ai";
+import type { ConversationMessage, ToolResultPart } from "@server/agents/zuckerman/conversations/types.js";
 
 /**
  * Convert ConversationMessage[] to ModelMessage[]
- * Filters out ignored messages and converts to AI SDK format
+ * ConversationMessage now matches ModelMessage format, so conversion is simple
+ * Handles backward compatibility for legacy string content in tool messages
  */
 export function convertToModelMessages(
   messages: ConversationMessage[]
 ): ModelMessage[] {
   return messages
     .filter((msg) => {
-      // Filter out ignored messages
       if (msg.ignore) return false;
       
-      // Filter out messages with invalid content
       if (msg.role === "tool") {
-        // Tool messages must have toolCallId and valid content
-        if (!msg.toolCallId) return false;
-        if (msg.content === undefined || msg.content === null) return false;
-        return true;
+        // Tool messages must have content as array
+        // Handle legacy format: string content with toolCallId
+        if (typeof msg.content === "string") {
+          return msg.content.trim().length > 0 && !!msg.toolCallId;
+        }
+        return Array.isArray(msg.content) && msg.content.length > 0;
       }
       
-      // For user/assistant/system messages, content must be a non-empty string
-      if (typeof msg.content !== "string" || msg.content.trim().length === 0) {
-        return false;
+      // For user/assistant/system messages, content must be string or array
+      if (typeof msg.content === "string") {
+        return msg.content.trim().length > 0;
+      }
+      if (Array.isArray(msg.content)) {
+        return msg.content.length > 0;
       }
       
-      return true;
+      return false;
     })
     .map((msg): ModelMessage => {
-      if (msg.role === "tool") {
-        // ToolContent is an array of ToolResultPart
-        // Convert string content to array format
-        // Note: We don't have toolName in ConversationMessage, so we'll use a placeholder
+      // Handle legacy tool message format: convert string + toolCallId to ToolResultPart array
+      if (msg.role === "tool" && typeof msg.content === "string" && msg.toolCallId) {
         return {
           role: "tool",
-          content: typeof msg.content === "string" 
-            ? [{ 
-                type: "tool-result" as const, 
-                toolCallId: msg.toolCallId!, 
-                toolName: "unknown", // ConversationMessage doesn't store toolName
-                output: msg.content 
-              }]
-            : msg.content,
-        } as any;
-      }
-
-      if (msg.toolCalls && msg.toolCalls.length > 0) {
-        // Assistant messages with tool calls need tool calls in the content array as ToolCallPart
-        // But generateText handles this differently - it returns toolCalls separately
-        // For now, we'll just return the content without tool calls embedded
-        // The tool calls will be handled by generateText's return value
-        return {
-          role: msg.role as "assistant",
-          content: msg.content as string,
+          content: [{
+            type: "tool-result",
+            toolCallId: msg.toolCallId,
+            toolName: "unknown", // Legacy messages don't have toolName
+            output: msg.content,
+          }] as ToolResultPart[],
         } as ModelMessage;
       }
-
+      
+      // ConversationMessage now matches ModelMessage format
       return {
-        role: msg.role as "user" | "assistant" | "system",
-        content: msg.content as string,
-      };
+        role: msg.role,
+        content: msg.content,
+      } as ModelMessage;
     });
 }
 

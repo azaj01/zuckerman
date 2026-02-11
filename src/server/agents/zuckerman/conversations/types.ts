@@ -14,16 +14,37 @@ export interface Conversation {
   metadata?: Record<string, unknown>;
 }
 
+// Content types matching AI SDK ModelMessage format
+export type TextPart = {
+  type: "text";
+  text: string;
+};
+
+export type ToolCallPart = {
+  type: "tool-call";
+  toolCallId: string;
+  toolName: string;
+  args: unknown;
+};
+
+export type ToolResultPart = {
+  type: "tool-result";
+  toolCallId: string;
+  toolName: string;
+  output: unknown;
+};
+
+export type ConversationContent = 
+  | string 
+  | Array<TextPart | ToolCallPart>
+  | Array<ToolResultPart>;
+
 export interface ConversationMessage {
   role: "user" | "assistant" | "system" | "tool";
-  content: string;
+  content: ConversationContent;
   timestamp: number;
-  toolCallId?: string;
-  toolCalls?: Array<{
-    id: string;
-    name: string;
-    arguments: string;
-  }>;
+  toolCallId?: string; // For tool messages (deprecated, use content array)
+  toolCalls?: Array<ToolCallPart>; // For assistant messages
   ignore?: boolean;
 }
 

@@ -1,4 +1,4 @@
-import type { ConversationId, ConversationState, Conversation, ConversationKey, ConversationType, ConversationLabel } from "@server/agents/zuckerman/conversations/types.js";
+import type { ConversationId, ConversationState, Conversation, ConversationKey, ConversationType, ConversationLabel, ConversationMessage } from "@server/agents/zuckerman/conversations/types.js";
 import type { SecurityContext } from "@server/world/execution/security/types.js";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -16,23 +16,9 @@ export interface AgentRunParams {
     accountId?: string;
   };
   /**
-   * Conversation context for memory (optional, extracted from conversation messages)
-   */
-  conversationContext?: string;
-  /**
    * Conversation messages (optional, provided by agent service)
    */
-  conversationMessages?: Array<{
-    role: "user" | "assistant" | "system" | "tool";
-    content: string;
-    timestamp: number;
-    toolCallId?: string;
-    toolCalls?: Array<{
-      id: string;
-      name: string;
-      arguments: string;
-    }>;
-  }>;
+  conversationMessages?: ConversationMessage[];
 }
 
 export interface AgentRunResult {

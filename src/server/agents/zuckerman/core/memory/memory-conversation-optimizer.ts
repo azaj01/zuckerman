@@ -18,9 +18,17 @@ export async function pruneUnusedMessages(
 
   console.log(`[Prune] Pruning messages:`, messages.length, getTokens(messages), threshold);
 
-  const text = activeMessages.map((m, i) => 
-    `[${i}] ${m.role} | ${(m.content?.length || 0)} chars | ${(m.content || "").substring(0, 300)}`
-  ).join("\n");
+  const text = activeMessages.map((m, i) => {
+    const contentStr = typeof m.content === "string" 
+      ? m.content 
+      : Array.isArray(m.content)
+        ? m.content
+          .filter((part: any) => part.type === "text")
+          .map((part: any) => part.text)
+          .join("")
+        : JSON.stringify(m.content);
+    return `[${i}] ${m.role} | ${contentStr.length} chars | ${contentStr.substring(0, 300)}`;
+  }).join("\n");
 
   try {
     const llm = await LLMProvider.getInstance().fastCheap();

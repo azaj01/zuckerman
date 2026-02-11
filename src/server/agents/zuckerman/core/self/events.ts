@@ -9,6 +9,7 @@ export interface WriteEvent {
   type: "write";
   conversationId: string;
   content: string;
+  role: "user" | "assistant" | "system" | "tool";
   runId?: string;
 }
 

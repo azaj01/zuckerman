@@ -11,6 +11,9 @@ import type {
   ConversationEntry,
   TranscriptEntry,
   ConversationMessage,
+  ConversationContent,
+  ToolCallPart,
+  ToolResultPart,
 } from "./types.js";
 import {
   loadConversationStore,
@@ -25,6 +28,41 @@ import {
 } from "./transcript.js";
 import { activityRecorder } from "@server/agents/zuckerman/activity/index.js";
 import { pruneUnusedMessages } from "@server/agents/zuckerman/core/memory/memory-conversation-optimizer.js";
+
+// Helper to convert ConversationContent to string
+function contentToString(content: ConversationContent): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map(part => {
+      if (part.type === "text") return part.text;
+      if (part.type === "tool-call") return `[tool-call: ${part.toolName}]`;
+      if (part.type === "tool-result") return `[tool-result: ${part.toolName}]`;
+      return "";
+    }).join(" ");
+  }
+  return "";
+}
+
+// Helper to convert ConversationMessage to transcript format
+function messageToTranscriptFormat(msg: ConversationMessage): {
+  role: "user" | "assistant" | "system" | "tool";
+  content: string;
+  timestamp: number;
+  toolCallId?: string;
+  toolCalls?: Array<{ id: string; name: string; arguments: string }>;
+} {
+  return {
+    role: msg.role,
+    content: contentToString(msg.content),
+    timestamp: msg.timestamp,
+    toolCallId: msg.toolCallId,
+    toolCalls: msg.toolCalls?.map(tc => ({
+      id: tc.toolCallId,
+      name: tc.toolName,
+      arguments: JSON.stringify(tc.args),
+    })),
+  };
+}
 
 /**
  * Derive conversation key from agent ID and conversation type/label
@@ -73,12 +111,17 @@ export class ConversationManager {
         const transcriptEntries = loadTranscript(transcriptPath);
 
         // Convert transcript entries to messages
-        const messages = transcriptEntries.map((entry) => ({
+        const messages: ConversationMessage[] = transcriptEntries.map((entry) => ({
           role: entry.role as "user" | "assistant" | "system" | "tool",
           content: entry.content,
           timestamp: entry.timestamp,
           toolCallId: entry.toolCallId,
-          toolCalls: entry.toolCalls,
+          toolCalls: entry.toolCalls?.map(tc => ({
+            type: "tool-call" as const,
+            toolCallId: tc.id,
+            toolName: tc.name,
+            args: JSON.parse(tc.arguments),
+          })),
         }));
 
         const conversation: Conversation = {
@@ -340,10 +383,11 @@ export class ConversationManager {
   async addMessage(
     id: ConversationId,
     role: "user" | "assistant" | "system" | "tool",
-    content: string,
+    content: ConversationContent | string,
     options?: {
       toolCallId?: string;
-      toolCalls?: Array<{
+      toolName?: string;
+      toolCalls?: Array<ToolCallPart | {
         id: string;
         name: string;
         arguments: string;
@@ -356,12 +400,57 @@ export class ConversationManager {
 
     const releaseLock = await this.acquireWriteLock(id);
     try {
-      const message = {
+      // Convert content to proper format
+      let messageContent: ConversationContent;
+      
+      if (role === "tool") {
+        // Tool messages must have content as array of ToolResultPart
+        if (typeof content === "string") {
+          // Convert string to ToolResultPart array
+          if (!options?.toolCallId || !options?.toolName) {
+            throw new Error("Tool messages require toolCallId and toolName");
+          }
+          messageContent = [{
+            type: "tool-result",
+            toolCallId: options.toolCallId,
+            toolName: options.toolName,
+            output: content,
+          }];
+        } else if (Array.isArray(content)) {
+          messageContent = content as Array<ToolResultPart>;
+        } else {
+          throw new Error("Tool messages must have content as string or ToolResultPart array");
+        }
+      } else {
+        // For other roles, accept string or array
+        messageContent = content as ConversationContent;
+      }
+
+      // Convert toolCalls to new format if needed
+      let toolCalls: Array<ToolCallPart> | undefined;
+      if (options?.toolCalls) {
+        toolCalls = options.toolCalls.map(tc => {
+          // Check if already in new format
+          if ("toolCallId" in tc && "toolName" in tc && "args" in tc) {
+            return tc as ToolCallPart;
+          }
+          // Convert from old format
+          const oldFormat = tc as { id: string; name: string; arguments: string };
+          return {
+            type: "tool-call",
+            toolCallId: oldFormat.id,
+            toolName: oldFormat.name,
+            args: JSON.parse(oldFormat.arguments),
+          };
+        });
+      }
+
+      const message: ConversationMessage = {
         role,
-        content,
+        content: messageContent,
         timestamp: Date.now(),
-        toolCallId: options?.toolCallId,
-        toolCalls: options?.toolCalls,
+        toolCallId: options?.toolCallId, // Keep for backward compatibility
+        toolCalls,
       };
       state.messages.push(message);
       state.conversation.lastActivity = Date.now();
@@ -385,7 +474,7 @@ export class ConversationManager {
         this.stateDir,
       );
       const transcriptEntries = messagesToTranscriptEntries(
-        [message],
+        [messageToTranscriptFormat(message)],
         entry?.lastTranscriptId,
       );
 
@@ -536,12 +625,12 @@ export class ConversationManager {
 
     // If we have messages in memory and no token limit, return recent ones
     if (!maxTokens) {
-      return state.messages.slice(-maxMessages);
+      return state.messages.slice(-maxMessages).map(messageToTranscriptFormat);
     }
 
     // For now, return recent messages (smart token counting can be added later)
     // This is a simple implementation - can be enhanced with actual token counting
-    return state.messages.slice(-maxMessages);
+    return state.messages.slice(-maxMessages).map(messageToTranscriptFormat);
   }
 
   /**
